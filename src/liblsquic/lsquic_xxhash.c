@@ -225,10 +225,14 @@ typedef enum { XXH_aligned, XXH_unaligned } XXH_alignment;
 FORCE_INLINE U32 XXH_readLE32_align(const void *ptr, XXH_endianess endian,
                                     XXH_alignment align)
 {
-    if (align == XXH_unaligned)
-        return endian == XXH_littleEndian ? A32(ptr) : XXH_swap32(A32(ptr));
-    else
-        return endian == XXH_littleEndian ? *(U32 *)ptr : XXH_swap32(*(U32 *)ptr);
+    U32 val;
+    if (align == XXH_unaligned) {
+        memcpy(&val, ptr, sizeof(U32));
+    } else {
+        return *(const U32 *)ptr;
+    }
+
+    return endian == XXH_littleEndian ? val : XXH_swap32(val);
 }
 
 FORCE_INLINE U32 XXH_readLE32(const void *ptr, XXH_endianess endian)

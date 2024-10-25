@@ -4334,7 +4334,6 @@ immediate_close (struct ietf_full_conn *conn)
     return TICK_SEND|TICK_CLOSE;
 }
 
-
 static void
 process_streams_read_events (struct ietf_full_conn *conn)
 {

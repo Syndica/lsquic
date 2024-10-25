@@ -112,6 +112,7 @@ ADD_CUSTOM_COMMAND(
     ARGS ${CMAKE_CURRENT_SOURCE_DIR}/gen-verstrs.pl ${CMAKE_CURRENT_SOURCE_DIR}/../../include/lsquic.h ${CMAKE_CURRENT_BINARY_DIR}/lsquic_versions_to_string.c
     DEPENDS ./gen-verstrs.pl ${CMAKE_CURRENT_SOURCE_DIR}/../../include/lsquic.h
 )
+
 SET(lsquic_STAT_SRCS ${lsquic_STAT_SRCS} ${CMAKE_CURRENT_BINARY_DIR}/lsquic_versions_to_string.c)
 SET(lsquic_STAT_SRCS ${lsquic_STAT_SRCS} ls-sfparser.c)
 
