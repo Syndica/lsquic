@@ -4,9 +4,8 @@
     .version = "0.1.0",
     .dependencies = .{
         .boringssl = .{
-            // .url = "https://github.com/Syndica/boringssl-zig/archive/958abaab919afbfd5faab53c30396363cde41586.tar.gz",
-            // .hash = "12201b2af52765771d4ddd7785191f568825de66b37152565493610230518ccaa95f",
-            .path = "../boringssl-zig",
+            .url = "https://github.com/Syndica/boringssl-zig/archive/958abaab919afbfd5faab53c30396363cde41586.tar.gz",
+            .hash = "12201b2af52765771d4ddd7785191f568825de66b37152565493610230518ccaa95f",
         },
         .zlib = .{
             .url = "https://github.com/allyourcodebase/zlib/archive/refs/tags/1.3.1.tar.gz",

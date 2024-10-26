@@ -45,7 +45,7 @@ SOFTWARE.
 #ifdef XXH_HEADER_NAME
 #include XXH_HEADER_NAME
 #else
-#include <xxhash.h>
+#include "lsquic_xxhash.h"
 #endif
 
 #include "huff-tables.h"
