@@ -11,7 +11,7 @@
  */
 
 #include <stdarg.h>
-#include <lsquic_types.h>
+#include "lsquic_types.h"
 #ifndef WIN32
 #include <sys/uio.h>
 #include <time.h>

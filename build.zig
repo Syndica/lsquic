@@ -11,6 +11,18 @@ pub fn build(b: *std.Build) !void {
     });
     b.installArtifact(lsquic);
 
+    const translate_c = b.addTranslateC(.{
+        .root_source_file = b.path("include/lsquic.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const mod = b.addModule("lsquic", .{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = translate_c.getOutput(),
+    });
+    mod.linkLibrary(lsquic);
+
     const boringssl = b.dependency("boringssl", .{
         .target = target,
         .optimize = optimize,
