@@ -573,7 +573,6 @@ prog_init_ssl_ctx (struct prog *prog)
     }
 
     const uint16_t sigalg_pref = 0x0807;
-    SSL_CTX_set_signing_algorithm_prefs(prog->prog_ssl_ctx, &sigalg_pref, 1);
     SSL_CTX_set_verify_algorithm_prefs(prog->prog_ssl_ctx, &sigalg_pref, 1);
     SSL_CTX_set_strict_cipher_list(prog->prog_ssl_ctx, "TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256");
 
