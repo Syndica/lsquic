@@ -10,12 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
+#include <arpa/inet.h>
 
 #include <event2/event.h>
 
 #include "lsquic.h"
-#include "test_common.h"
-
 #include "../src/liblsquic/lsquic_logger.h"
 
 #include <openssl/ssl.h>
@@ -25,15 +24,27 @@
 
 #define STDIN_FILENO 0
 
-#define MAX_ADDRESS_LEN 256 // Maximum address length
-#define MAX_BYTES_SIZE 1232 // Maximum byte array size
-#define BUFFER_SIZE 2048    // Buffer size for incoming data
+#define MAX_CONNECTIONS 100                 // Maximum number of connections
+#define MAX_PENDING_TXNS_PER_CONNECTION 100 // Max number of pending transactions per connection
+#define MAX_ADDRESS_LEN 256                 // Maximum address length
+#define MAX_BYTES_SIZE 1232                 // Maximum byte array size
+#define BUFFER_SIZE 2048                    // Buffer size for incoming data
 
 #define SSL_EXIT_SUCCESS 1
 #define SSL_EXIT_FAILURE 0
 
-struct event;
-struct event_base;
+
+typedef struct st_squic_port {
+    int                             fd;
+    struct sockaddr_storage         sas;
+} squic_port_t;
+
+typedef struct st_squic_txn
+{
+    char            address[MAX_ADDRESS_LEN];
+    int             bytes_size;
+    unsigned char   bytes[MAX_BYTES_SIZE];
+} squic_txn_t;
 
 typedef struct st_squic {
     struct lsquic_engine_settings   engine_settings;
@@ -46,26 +57,41 @@ typedef struct st_squic {
 
     SSL_CTX                        *ssl_ctx;
 
+    lsquic_conn_ctx_t              *conns[MAX_CONNECTIONS];
+    int                             n_conns;
+
+    squic_port_t                    *sp;
 } squic_t;
 
 
-typedef struct st_squic_stream_ctx {
-    struct lsquic_conn_ctx  *conn_h;
-    squic_t                 *squic;
-} squic_stream_ctx_t;
+struct lsquic_conn_ctx {
+    squic_t             *sq;
+    lsquic_conn_t       *conn;
+    int                  is_connected;                              // 0 -> not connected
+    char                 address[MAX_ADDRESS_LEN];                  // ip address of peer
+    squic_txn_t          txns[MAX_PENDING_TXNS_PER_CONNECTION];     // pending transactions
+    int                  n_txns;                                    // number of transactions
+    int                  n_stms;                                    // number of streams
+};
+
+
+struct lsquic_stream_ctx {
+    lsquic_stream_t     *stream;                
+    lsquic_conn_ctx_t   *conn_ctx;              
+    squic_txn_t          txn;
+};
 
 
 // Sol Transaction
-typedef struct st_squic_txn
-{
-    char            address[MAX_ADDRESS_LEN];
-    int             bytes_size;
-    unsigned char   bytes[MAX_BYTES_SIZE];
-} squic_txn_t;
 
+
+///////////////////////////////////////////////////////////////////////////////
+// Squic Helpers
+///////////////////////////////////////////////////////////////////////////////
 
 // Print transaction data
-void squic_print_txn(const squic_txn_t *data)
+void
+squic_print_txn(const squic_txn_t *data)
 {
     printf("Transaction: address=%s bytes_size=%d bytes={", data->address, data->bytes_size);
     for (int i = 0; i < data->bytes_size; i++)
@@ -77,7 +103,8 @@ void squic_print_txn(const squic_txn_t *data)
 
 
 // Safe parsing function for "cin: address=... bytes_size=... bytes={...}"
-int squic_parse_txn(const char *input, squic_txn_t *data)
+int
+squic_parse_txn(const char *input, squic_txn_t *data)
 {
     // Initialize the struct to zero
     memset(data, 0, sizeof(squic_txn_t));
@@ -151,9 +178,46 @@ int squic_parse_txn(const char *input, squic_txn_t *data)
     return EXIT_SUCCESS; // Success
 }
 
+
+// Parse an address into a sockaddr
+struct sockaddr_storage
+squic_create_sockaddr_storage(const char *address)
+{
+    char ip[INET_ADDRSTRLEN];
+    int port;
+    struct sockaddr_storage ss;
+
+    // Zero out the structure
+    memset(&ss, 0, sizeof(struct sockaddr_storage));
+
+    // Cast to sockaddr_in since we are working with IPv4
+    struct sockaddr_in *sa_in = (struct sockaddr_in *)&ss;
+
+    // Set the family to AF_INET (IPv4)
+    sa_in->sin_family = AF_INET;
+
+    // Split the string into IP and port
+    sscanf(address, "%[^:]:%d", ip, &port);
+
+    // Set the port in network byte order
+    sa_in->sin_port = htons(port);
+
+    // Convert the IP address from text to binary form
+    if (inet_pton(AF_INET, ip, &sa_in->sin_addr) <= 0)
+    {
+        perror("inet_pton failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Return the sockaddr_storage structure
+    return ss;
+}
+
+
 // Read a line of input from a file descriptor
 // Blocks until line received or error occurs
-int squic_read_line(int fd, char *buffer, size_t max_len) {
+int
+squic_read_line(int fd, char *buffer, size_t max_len) {
     size_t i = 0;
     ssize_t bytes_read;
     char ch;
@@ -183,6 +247,19 @@ int squic_read_line(int fd, char *buffer, size_t max_len) {
     return EXIT_SUCCESS;
 }
 
+
+void
+squic_make_streams_for_txns(lsquic_conn_ctx_t *conn_ctx) {
+    while (conn_ctx->n_stms < conn_ctx->n_txns) {
+        lsquic_conn_make_stream(conn_ctx->conn);
+        conn_ctx->n_stms++;
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Send Packets
+///////////////////////////////////////////////////////////////////////////////
+
 int squic_packets_out(
     void                          *ctx,
     const struct lsquic_out_spec  *specs,
@@ -199,20 +276,67 @@ int squic_packets_out(
 // Stream Callbacks
 ///////////////////////////////////////////////////////////////////////////////
 
-lsquic_conn_ctx_t * squic_stream_on_new_conn(void *stream_ctx, lsquic_conn_t *conn) {
+lsquic_conn_ctx_t * squic_stream_on_new_conn(void *_, lsquic_conn_t *conn) {
     printf("squic_stream_on_new_conn\n");
-    return NULL;
+
+    // Get the connection context from connection
+    lsquic_conn_ctx_t *conn_ctx = lsquic_conn_get_ctx(conn);
+    if (MAX_CONNECTIONS == conn_ctx->sq->n_conns) {
+        printf("reached max connections");
+        exit(EXIT_FAILURE);
+    }
+
+    // Add the connection context to squic
+    conn_ctx->sq->conns[conn_ctx->sq->n_conns++] = conn_ctx;
+
+    // Make streams for new transactions
+    squic_make_streams_for_txns(conn_ctx);
+
+    // Return connection context pointer
+    return conn_ctx;
 }
 
 
-void squic_stream_on_conn_closed(lsquic_conn_t *c) {
+void squic_stream_on_conn_closed(lsquic_conn_t *conn) {
     printf("squic_stream_on_conn_closed\n");
+
+    // Get connection context from connection
+    lsquic_conn_ctx_t *conn_ctx = lsquic_conn_get_ctx(conn);
+
+    // Remove connection from squic connections
+    for (int i = 0; i < conn_ctx->sq->n_conns; i++) {
+        if (conn_ctx->sq->conns[i] == conn_ctx) {
+            conn_ctx->sq->conns[i] = conn_ctx->sq->conns[conn_ctx->sq->n_conns - 1];
+            conn_ctx->sq->n_conns--;
+            break;
+        }
+    }
+
+    // Set the conns connection context to NULL to prevent use after free
+    lsquic_conn_set_ctx(conn, NULL);
+
+    // Free connection context
+    free(conn_ctx);
 }
 
 
-lsquic_stream_ctx_t * squic_stream_on_new_stream(void *stream_ctx, lsquic_stream_t *stream) {
+lsquic_stream_ctx_t * squic_stream_on_new_stream(void *_, lsquic_stream_t *stream) {
     printf("squic_stream_on_new_stream\n");
-    return NULL;
+    // Get the connection and its context
+    lsquic_conn_t *conn = lsquic_stream_conn(stream);
+    lsquic_conn_ctx_t *conn_ctx = lsquic_conn_get_ctx(conn);
+
+    // Create stream context
+    lsquic_stream_ctx_t *stm_ctx = (lsquic_stream_ctx_t *)calloc(1, sizeof(*stm_ctx));
+    stm_ctx->stream = stream;
+    stm_ctx->conn_ctx = conn_ctx;
+    stm_ctx->txn = conn_ctx->txns[conn_ctx->n_txns--];
+
+    // Signal that we want to write
+    lsquic_stream_wantwrite(stream, 1);
+
+    // Return stream context pointer
+    return stm_ctx;
 }
 
 
@@ -223,24 +347,77 @@ void squic_stream_on_read(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_c
 
 void squic_stream_on_write(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx) {
     printf("squic_stream_on_write\n");
+    // Write transaction bytes to stream and exit if not all bytes were written
+    int bytes_written = lsquic_stream_write(stream, stream_ctx->txn.bytes, stream_ctx->txn.bytes_size);
+    if (bytes_written != stream_ctx->txn.bytes_size) {
+        printf("only printed portion of txn bytes!!");
+        exit(1);
+    }
 
+    // Flush and close the stream
+    lsquic_stream_flush(stream);
+    lsquic_stream_wantwrite(stream, 0);
+    lsquic_stream_close(stream);
 }
 
 
 void squic_stream_on_close(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx) {
     printf("squic_stream_on_close\n");
+    free(stream_ctx);
 }
 
 
 ///////////////////////////////////////////////////////////////////////////////
 // Event Handlers
 ///////////////////////////////////////////////////////////////////////////////
+lsquic_conn_ctx_t * squic_get_connection_context(squic_t *sq, const char *address) {
+    // Check if we already have a connection for the transaction address
+    for (int i = 0; i < sq->n_conns; i++) {
+        if (strcmp(sq->conns[i]->address, address) == 0) {
+            return sq->conns[i];
+        }
+    }
+
+    // Create new connection context
+    lsquic_conn_ctx_t *conn_ctx = (lsquic_conn_ctx_t *)calloc(1, sizeof(lsquic_conn_ctx_t));
+    if (NULL == conn_ctx) {
+        printf("Error allocating memory for connection context\n");
+        exit(EXIT_FAILURE);
+    }
+    conn_ctx->sq = sq;
+    conn_ctx->conn = NULL;
+    strncpy(conn_ctx->address, address, MAX_ADDRESS_LEN);
+
+    // Initiate connection 
+    struct sockaddr_storage peer_sas = squic_create_sockaddr_storage(address);
+    if (NULL == lsquic_engine_connect(
+        sq->engine,                                 // engine
+        N_LSQVER,                                   // version
+        (struct sockaddr *)&sq->sp->sas,            // local_sa
+        (struct sockaddr *)&peer_sas,               // peer_sa
+        NULL,                                       // peer_ctx
+        conn_ctx,                                   // conn_ctx
+        NULL,                                       // hostname
+        0,                                          // base_plpmtu
+        NULL,                                       // sess_resume
+        0,                                          // sess_resume_len
+        NULL,                                       // token
+        0                                           // token_len
+    ))
+    {
+        printf("Error connecting to server\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Return context pointer
+    return conn_ctx;
+}
 
 static void
 squic_read_stdin_event_handler (int fd, short what, void *arg)
 {
     // Event book keeping
-    squic_t * squic = (squic_t *)arg;
+    squic_t *squic = (squic_t *)arg;
     if (squic->read_stdin_event) {
         event_del(squic->read_stdin_event);
         event_free(squic->read_stdin_event);
@@ -264,6 +441,28 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
 
     // Print the transaction data
     squic_print_txn(&txn);
+
+    // Get a connection context (connection may not be established yet)
+    lsquic_conn_ctx_t *conn_ctx = squic_get_connection_context(squic, txn.address);
+    if (NULL == conn_ctx) {
+        printf("failed to get connection context");
+        exit(EXIT_FAILURE);
+    }
+
+    // Add the txn to the connections context
+    if (MAX_PENDING_TXNS_PER_CONNECTION == conn_ctx->n_txns) {
+        printf("exceeded max pending transactions, skipping transaction");
+        return;
+    }
+    conn_ctx->txns[conn_ctx->n_txns++] = txn;
+
+    // If the connection is active, make a stream for all txns
+    if (conn_ctx->is_connected) {
+        squic_make_streams_for_txns(conn_ctx);
+    }
+
+    // Process connections
+    lsquic_engine_process_conns(squic->engine);
 }
 
 
@@ -389,7 +588,7 @@ squic_init_ssl_ctx(squic_t *squic) {
 
 
 int 
-squic_init(squic_t *squic, struct lsquic_stream_if *stream_if, squic_stream_ctx_t *stream_if_ctx) {
+squic_init(squic_t *squic, squic_port_t *squic_port, struct lsquic_stream_if *stream_if) {
     // Initialize the squic struct to zero
     memset(squic, 0, sizeof(*squic));
 
@@ -400,7 +599,7 @@ squic_init(squic_t *squic, struct lsquic_stream_if *stream_if, squic_stream_ctx_
     squic->engine_api.ea_alpn = "solana-tpu";
     squic->engine_api.ea_settings = &squic->engine_settings;
     squic->engine_api.ea_stream_if = stream_if;
-    squic->engine_api.ea_stream_if_ctx = stream_if_ctx;
+    squic->engine_api.ea_stream_if_ctx = squic;
     squic->engine_api.ea_packets_out = squic_packets_out;
     squic->engine_api.ea_packets_out_ctx = NULL; // When we are actually sending packets, we will need to set this
 
@@ -439,6 +638,20 @@ squic_init(squic_t *squic, struct lsquic_stream_if *stream_if, squic_stream_ctx_
         return EXIT_FAILURE;
     }
 
+    // Initialise the port
+    squic->sp = squic_port;
+    squic->sp->fd = socket(AF_INET, SOCK_DGRAM, 0);
+    squic->sp->sas = squic_create_sockaddr_storage("127.0.0.1:4444");
+    if (-1 == squic->sp->fd) {
+        printf("socket failed\n");
+        return EXIT_FAILURE;
+    }
+
+    if (0 != bind(squic->sp->fd, (struct sockaddr *)&squic->sp->sas, sizeof(struct sockaddr_in))) {
+        printf("bind failed\n");
+        return EXIT_FAILURE;
+    }
+
     // Success
     return EXIT_SUCCESS;
 }
@@ -448,7 +661,7 @@ int
 main(int argc, char **argv)
 {
     squic_t squic;
-    squic_stream_ctx_t squic_stream_ctx;
+    squic_port_t squic_port;
     struct lsquic_stream_if squic_stream_if = {
         .on_new_conn    = squic_stream_on_new_conn,
         .on_conn_closed = squic_stream_on_conn_closed,
@@ -463,7 +676,7 @@ main(int argc, char **argv)
         return EXIT_FAILURE;
     }
     
-    if (EXIT_FAILURE == squic_init(&squic, &squic_stream_if, &squic_stream_ctx)) {
+    if (EXIT_FAILURE == squic_init(&squic, &squic_port, &squic_stream_if)) {
         printf("squic_init failed\n");
         return EXIT_FAILURE;
     }
@@ -488,7 +701,7 @@ main(int argc, char **argv)
 //         exit(-1);
 //     }
 
-//     squic_stream_ctx_t squic_stream_ctx = {0};
+//     squic_client_ctx_t squic_stream_ctx = {0};
 
 //     struct lsquic_stream_if squic_stream_if = {
 //         .on_new_conn    = squic_stream_on_new_conn,
