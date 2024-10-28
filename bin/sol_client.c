@@ -295,6 +295,9 @@ squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
         exit(EXIT_FAILURE);
     }
 
+    // Set the connection in the context
+    conn_ctx->conn = conn;
+
     // Add the connection context to squic
     conn_ctx->sq->conns[conn_ctx->sq->n_conns++] = conn_ctx;
 
@@ -303,6 +306,9 @@ squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
         lsquic_conn_make_stream(conn_ctx->conn);
         conn_ctx->n_stms++;
     }
+
+    // Set is_connected
+    conn_ctx->is_connected = 1;
 
     // Return connection context pointer
     return conn_ctx;
@@ -398,6 +404,7 @@ squic_get_ssl_ctx(void *peer_ctx, const struct sockaddr *local)
 ///////////////////////////////////////////////////////////////////////////////
 // Event Handlers
 ///////////////////////////////////////////////////////////////////////////////
+
 lsquic_conn_ctx_t * 
 squic_get_connection_context(squic_t *sq, const char *address)
 {
@@ -468,9 +475,6 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
         printf("Error parsing transaction data\n");
         exit(EXIT_FAILURE);
     }
-
-    // Print the transaction data
-    squic_print_txn(&txn);
 
     // Get a connection context (connection may not be established yet)
     lsquic_conn_ctx_t *conn_ctx = squic_get_connection_context(squic, txn.address);
@@ -726,46 +730,3 @@ main(int argc, char **argv)
         printf("squic_run exited with no more events\n");
     }
 }
-
-// int
-// main(int argc, char **argv)
-// {
-
-//     if (0 != lsquic_global_init(LSQUIC_GLOBAL_CLIENT))
-//     {
-//         LSQ_ERROR("global initialization failed");
-//         exit(-1);
-//     }
-
-//     squic_client_ctx_t squic_stream_ctx = {0};
-
-//     struct lsquic_stream_if squic_stream_if = {
-//         .on_new_conn    = squic_stream_on_new_conn,
-//         .on_conn_closed = squic_stream_on_conn_closed,
-//         .on_new_stream  = squic_stream_on_new_stream,
-//         .on_read        = squic_stream_on_read,
-//         .on_write       = squic_stream_on_write,
-//         .on_close       = squic_stream_on_close,
-//     };
-
-//     struct lsquic_engine_api engine_api = {
-//         .ea_packets_out     = squic_packets_out,
-//         .ea_packets_out_ctx = NULL,
-//         .ea_stream_if       = &squic_stream_if,
-//         .ea_stream_if_ctx   = &squic_stream_ctx,
-//         .ea_alpn            = "solana-tpu",
-//     };
-
-//     lsquic_engine_t *engine = lsquic_engine_new(0, &engine_api);
-
-//     while (1)
-//     {
-//         squic_txn_t txn = {0};
-//         if (0 < squic_read_next_txn_from_stdin(&txn))
-//         {
-//             squic_print_txn(&txn);
-//         }
-//     }
-
-//     lsquic_global_cleanup();
-// }
