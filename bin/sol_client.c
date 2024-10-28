@@ -82,14 +82,10 @@ struct lsquic_stream_ctx {
 };
 
 
-// Sol Transaction
-
-
 ///////////////////////////////////////////////////////////////////////////////
 // Squic Helpers
 ///////////////////////////////////////////////////////////////////////////////
 
-// Print transaction data
 void
 squic_print_txn(const squic_txn_t *data)
 {
@@ -102,7 +98,6 @@ squic_print_txn(const squic_txn_t *data)
 }
 
 
-// Safe parsing function for "cin: address=... bytes_size=... bytes={...}"
 int
 squic_parse_txn(const char *input, squic_txn_t *data)
 {
@@ -179,7 +174,6 @@ squic_parse_txn(const char *input, squic_txn_t *data)
 }
 
 
-// Parse an address into a sockaddr
 struct sockaddr_storage
 squic_create_sockaddr_storage(const char *address)
 {
@@ -214,10 +208,9 @@ squic_create_sockaddr_storage(const char *address)
 }
 
 
-// Read a line of input from a file descriptor
-// Blocks until line received or error occurs
 int
-squic_read_line(int fd, char *buffer, size_t max_len) {
+squic_read_line(int fd, char *buffer, size_t max_len)
+{
     size_t i = 0;
     ssize_t bytes_read;
     char ch;
@@ -248,35 +241,51 @@ squic_read_line(int fd, char *buffer, size_t max_len) {
 }
 
 
-void
-squic_make_streams_for_txns(lsquic_conn_ctx_t *conn_ctx) {
-    while (conn_ctx->n_stms < conn_ctx->n_txns) {
-        lsquic_conn_make_stream(conn_ctx->conn);
-        conn_ctx->n_stms++;
-    }
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // Send Packets
 ///////////////////////////////////////////////////////////////////////////////
 
-int squic_packets_out(
+int
+squic_packets_out(
     void                          *ctx,
     const struct lsquic_out_spec  *specs,
     unsigned                       n_specs
-) {
-    printf("squic_packets_out\n");
-    (void)ctx;
-    (void)specs;
-    return n_specs;
+)
+{
+    struct msghdr msg;
+    unsigned n;
+
+    memset(&msg, 0, sizeof(msg));
+    squic_port_t *sp = (squic_port_t *) ctx;
+    if (NULL == sp) {
+        printf("packets out context is null!\n");
+    }
+
+    for (n = 0; n < n_specs; ++n)
+    {
+        msg.msg_name       = (void *) specs[n].dest_sa;
+        msg.msg_namelen    = sizeof(struct sockaddr_in);
+        msg.msg_iov        = specs[n].iov;
+        msg.msg_iovlen     = specs[n].iovlen;
+        ssize_t bytes_sent = sendmsg(sp->fd, &msg, 0);
+        printf("Sent %ld bytes\n", bytes_sent);
+        if (bytes_sent < 0) {
+            perror("sendmsg");
+            return -1;
+        }
+    }
+
+    return (int) n;
 }
 
 
 ///////////////////////////////////////////////////////////////////////////////
-// Stream Callbacks
+// Callbacks
 ///////////////////////////////////////////////////////////////////////////////
 
-lsquic_conn_ctx_t * squic_stream_on_new_conn(void *_, lsquic_conn_t *conn) {
+lsquic_conn_ctx_t * 
+squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
+{
     printf("squic_stream_on_new_conn\n");
 
     // Get the connection context from connection
@@ -290,14 +299,19 @@ lsquic_conn_ctx_t * squic_stream_on_new_conn(void *_, lsquic_conn_t *conn) {
     conn_ctx->sq->conns[conn_ctx->sq->n_conns++] = conn_ctx;
 
     // Make streams for new transactions
-    squic_make_streams_for_txns(conn_ctx);
+    while (conn_ctx->n_stms < conn_ctx->n_txns) {
+        lsquic_conn_make_stream(conn_ctx->conn);
+        conn_ctx->n_stms++;
+    }
 
     // Return connection context pointer
     return conn_ctx;
 }
 
 
-void squic_stream_on_conn_closed(lsquic_conn_t *conn) {
+void 
+squic_stream_on_conn_closed(lsquic_conn_t *conn)
+{
     printf("squic_stream_on_conn_closed\n");
 
     // Get connection context from connection
@@ -320,7 +334,9 @@ void squic_stream_on_conn_closed(lsquic_conn_t *conn) {
 }
 
 
-lsquic_stream_ctx_t * squic_stream_on_new_stream(void *_, lsquic_stream_t *stream) {
+lsquic_stream_ctx_t * 
+squic_stream_on_new_stream(void *_, lsquic_stream_t *stream)
+{
     printf("squic_stream_on_new_stream\n");
     // Get the connection and its context
     lsquic_conn_t *conn = lsquic_stream_conn(stream);
@@ -340,12 +356,16 @@ lsquic_stream_ctx_t * squic_stream_on_new_stream(void *_, lsquic_stream_t *strea
 }
 
 
-void squic_stream_on_read(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx) {
+void 
+squic_stream_on_read(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx)
+{
     printf("squic_stream_on_read\n");
 }
 
 
-void squic_stream_on_write(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx) {
+void 
+squic_stream_on_write(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx)
+{
     printf("squic_stream_on_write\n");
     // Write transaction bytes to stream and exit if not all bytes were written
     int bytes_written = lsquic_stream_write(stream, stream_ctx->txn.bytes, stream_ctx->txn.bytes_size);
@@ -361,16 +381,26 @@ void squic_stream_on_write(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_
 }
 
 
-void squic_stream_on_close(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx) {
+void 
+squic_stream_on_close(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx)
+{
     printf("squic_stream_on_close\n");
     free(stream_ctx);
+}
+
+struct ssl_ctx_st *
+squic_get_ssl_ctx(void *peer_ctx, const struct sockaddr *local)
+{
+    return (struct ssl_ctx_st *)peer_ctx;
 }
 
 
 ///////////////////////////////////////////////////////////////////////////////
 // Event Handlers
 ///////////////////////////////////////////////////////////////////////////////
-lsquic_conn_ctx_t * squic_get_connection_context(squic_t *sq, const char *address) {
+lsquic_conn_ctx_t * 
+squic_get_connection_context(squic_t *sq, const char *address)
+{
     // Check if we already have a connection for the transaction address
     for (int i = 0; i < sq->n_conns; i++) {
         if (strcmp(sq->conns[i]->address, address) == 0) {
@@ -395,7 +425,7 @@ lsquic_conn_ctx_t * squic_get_connection_context(squic_t *sq, const char *addres
         N_LSQVER,                                   // version
         (struct sockaddr *)&sq->sp->sas,            // local_sa
         (struct sockaddr *)&peer_sas,               // peer_sa
-        NULL,                                       // peer_ctx
+        sq->ssl_ctx,                                // peer_ctx
         conn_ctx,                                   // conn_ctx
         NULL,                                       // hostname
         0,                                          // base_plpmtu
@@ -458,7 +488,10 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
 
     // If the connection is active, make a stream for all txns
     if (conn_ctx->is_connected) {
-        squic_make_streams_for_txns(conn_ctx);
+        while (conn_ctx->n_stms < conn_ctx->n_txns) {
+            lsquic_conn_make_stream(conn_ctx->conn);
+            conn_ctx->n_stms++;
+        }
     }
 
     // Process connections
@@ -478,7 +511,8 @@ squic_usr1_event_handler (int fd, short what, void *arg)
 ///////////////////////////////////////////////////////////////////////////////
 
 int 
-squic_init_dummy_x509_cert(X509 **cert, EVP_PKEY **pkey) {
+squic_init_dummy_x509_cert(X509 **cert, EVP_PKEY **pkey)
+{
     uint8_t public_key[32];
     uint8_t private_key[64];
 
@@ -537,7 +571,8 @@ squic_init_dummy_x509_cert(X509 **cert, EVP_PKEY **pkey) {
 
 
 int 
-squic_init_ssl_ctx(squic_t *squic) {
+squic_init_ssl_ctx(squic_t *squic)
+{
     squic->ssl_ctx = SSL_CTX_new(TLS_method());
     if (NULL == squic->ssl_ctx) {
         printf("SSL_CTX_new failed\n");
@@ -588,7 +623,8 @@ squic_init_ssl_ctx(squic_t *squic) {
 
 
 int 
-squic_init(squic_t *squic, squic_port_t *squic_port, struct lsquic_stream_if *stream_if) {
+squic_init(squic_t *squic, squic_port_t *squic_port, struct lsquic_stream_if *stream_if)
+{
     // Initialize the squic struct to zero
     memset(squic, 0, sizeof(*squic));
 
@@ -601,7 +637,8 @@ squic_init(squic_t *squic, squic_port_t *squic_port, struct lsquic_stream_if *st
     squic->engine_api.ea_stream_if = stream_if;
     squic->engine_api.ea_stream_if_ctx = squic;
     squic->engine_api.ea_packets_out = squic_packets_out;
-    squic->engine_api.ea_packets_out_ctx = NULL; // When we are actually sending packets, we will need to set this
+    squic->engine_api.ea_packets_out_ctx = (void *)squic_port; // When we are actually sending packets, we will need to set this
+    squic->engine_api.ea_get_ssl_ctx = squic_get_ssl_ctx;
 
     // Create the engine
     squic->engine = lsquic_engine_new(0, &squic->engine_api);
@@ -638,7 +675,7 @@ squic_init(squic_t *squic, squic_port_t *squic_port, struct lsquic_stream_if *st
         return EXIT_FAILURE;
     }
 
-    // Initialise the port
+    // Initialize the port struct
     squic->sp = squic_port;
     squic->sp->fd = socket(AF_INET, SOCK_DGRAM, 0);
     squic->sp->sas = squic_create_sockaddr_storage("127.0.0.1:4444");
@@ -646,7 +683,6 @@ squic_init(squic_t *squic, squic_port_t *squic_port, struct lsquic_stream_if *st
         printf("socket failed\n");
         return EXIT_FAILURE;
     }
-
     if (0 != bind(squic->sp->fd, (struct sockaddr *)&squic->sp->sas, sizeof(struct sockaddr_in))) {
         printf("bind failed\n");
         return EXIT_FAILURE;
