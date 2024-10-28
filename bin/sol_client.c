@@ -11,6 +11,7 @@
 #include <string.h>
 #include <sys/queue.h>
 #include <arpa/inet.h>
+#include <signal.h>
 
 #include <event2/event.h>
 
@@ -339,7 +340,7 @@ squic_packets_out(
 
 
 lsquic_conn_ctx_t * 
-squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
+squic_stream_on_new_conn(void *ctx, lsquic_conn_t *conn)
 {
     printf("squic_stream_on_new_conn\n");
 
@@ -362,21 +363,9 @@ squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
 
 
 void
-squic_stream_on_hsk_done(lsquic_conn_t *conn, enum lsquic_hsk_status hsk_status) {
-    switch (hsk_status) {
-        case LSQ_HSK_FAIL:
-            printf("Handshake failed\n");
-            break;
-        case LSQ_HSK_OK:
-            printf("Handshake successful\n");
-            break;
-        case LSQ_HSK_RESUMED_OK:
-            printf("Handshake successful with session resumption\n");
-            break;
-        case LSQ_HSK_RESUMED_FAIL:
-            printf("Session resumption failed\n");
-            break;
-    }
+squic_stream_on_goaway_received(lsquic_conn_t *conn)
+{
+    printf("on_goaway_received\n");
 }
 
 
@@ -406,7 +395,7 @@ squic_stream_on_conn_closed(lsquic_conn_t *conn)
 
 
 lsquic_stream_ctx_t * 
-squic_stream_on_new_stream(void *_, lsquic_stream_t *stream)
+squic_stream_on_new_stream(void *ctx, lsquic_stream_t *stream)
 {
     printf("squic_stream_on_new_stream\n");
 
@@ -463,6 +452,70 @@ squic_stream_on_close(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx)
 }
 
 
+ssize_t
+squic_stream_on_dg_write(lsquic_conn_t *conn, void *ctx, size_t n_to_write)
+{
+    printf("squic_stream_on_dg_write\n");
+    return 0;
+}
+
+
+void 
+squic_stream_on_datagram(lsquic_conn_t *dg, const void *buf, size_t buf_size)
+{
+    printf("squic_stream_on_datagram\n");
+}
+
+
+void
+squic_stream_on_hsk_done(lsquic_conn_t *conn, enum lsquic_hsk_status hsk_status) {
+    switch (hsk_status) {
+        case LSQ_HSK_FAIL:
+            printf("Handshake failed\n");
+            break;
+        case LSQ_HSK_OK:
+            printf("Handshake successful\n");
+            break;
+        case LSQ_HSK_RESUMED_OK:
+            printf("Handshake successful with session resumption\n");
+            break;
+        case LSQ_HSK_RESUMED_FAIL:
+            printf("Session resumption failed\n");
+            break;
+    }
+}
+
+
+void
+squic_stream_on_new_token(lsquic_conn_t *conn, const unsigned char *token, size_t token_size)
+{
+    printf("squic_stream_on_new_token\n");
+}
+
+
+void 
+squic_stream_on_sess_resume_info(lsquic_conn_t *conn, const unsigned char *info, size_t info_size)
+{
+    printf("squic_stream_on_sess_resume_info\n");
+}
+
+
+void
+squic_stream_on_reset(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx, int how)
+{
+    printf("squic_stream_on_reset\n");
+}
+
+
+void 
+squic_stream_on_conncloseframe_received(lsquic_conn_t *conn,
+                                       int app_error, uint64_t error_code,
+                                       const char *reason, int reason_len)
+{
+    printf("squic_stream_on_conncloseframe_received\n");
+}
+
+
 struct ssl_ctx_st *
 squic_get_ssl_ctx(void *peer_ctx, const struct sockaddr *local)
 {
@@ -480,7 +533,6 @@ squic_tick_event_handler(int fd, short what, void *ctx)
 {
     squic_t *sqc = (squic_t *)ctx;
 
-    // Check for any conns with pending transactions and start new streams
     for (int i = 0; i < sqc->n_conns; i++) {
         char errbuf[100];
         int status = lsquic_conn_status(sqc->conns[i]->conn, errbuf, 100);
@@ -522,23 +574,20 @@ squic_tick_event_handler(int fd, short what, void *ctx)
         }
 
         while (LSCONN_ST_CONNECTED == status && sqc->conns[i]->n_stms < sqc->conns[i]->n_txns) {
+            printf("creating new stream for conn: n_txns=%d n_stms=%d\n", sqc->conns[i]->n_txns, sqc->conns[i]->n_stms);
             lsquic_conn_make_stream(sqc->conns[i]->conn);
             sqc->conns[i]->n_stms++;
         }
     }
     
-    // Process the connections
     lsquic_engine_process_conns(sqc->engine);
-
-    // Reset the tick event
     event_add(sqc->tick_event, &sqc->tick_event_timeout);
 }
 
 
 static void 
 squic_read_packets_event_handler(int _a, short _b, void *ctx)
-{
-    printf("squic_read_packets_event_handler\n");
+{   
     squic_t *sqc = (squic_t *)ctx;
 
     struct sockaddr_in client_addr;
@@ -560,6 +609,8 @@ squic_read_packets_event_handler(int _a, short _b, void *ctx)
 
     ssize_t bytes_read = recvmsg(sqc->socket->fd, &msg, 0);
 
+    printf("Received %ld bytes\n", bytes_read);
+
     if (bytes_read < 0) {
         fprintf(stderr, "Error reading from socket: %s\n", strerror(errno));
         return;
@@ -577,6 +628,9 @@ squic_read_packets_event_handler(int _a, short _b, void *ctx)
             return;
         }
     }
+
+    lsquic_engine_process_conns(sqc->engine);
+    event_add(sqc->read_pkts_event, NULL);
 }
 
 
@@ -585,11 +639,6 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
 {
     // Event book keeping
     squic_t *squic = (squic_t *)arg;
-    if (squic->read_stdin_event) {
-        event_del(squic->read_stdin_event);
-        event_free(squic->read_stdin_event);
-    }
-    squic->read_stdin_event = event_new(squic->event_base, STDIN_FILENO, EV_READ, squic_read_stdin_event_handler, squic);
     event_add(squic->read_stdin_event, NULL);
 
     // Read a line of input from stdin
@@ -864,13 +913,20 @@ main(int argc, char **argv)
     squic_t sqc;
     squic_socket_t sqc_socket;
     struct lsquic_stream_if squic_stream_if = {
-        .on_new_conn    = squic_stream_on_new_conn,
-        .on_hsk_done    = squic_stream_on_hsk_done,
-        .on_conn_closed = squic_stream_on_conn_closed,
-        .on_new_stream  = squic_stream_on_new_stream,
-        .on_read        = squic_stream_on_read,
-        .on_write       = squic_stream_on_write,
-        .on_close       = squic_stream_on_close,
+        .on_new_conn                = squic_stream_on_new_conn,
+        .on_goaway_received         = squic_stream_on_goaway_received,
+        .on_conn_closed             = squic_stream_on_conn_closed,
+        .on_new_stream              = squic_stream_on_new_stream,
+        .on_read                    = squic_stream_on_read,
+        .on_write                   = squic_stream_on_write,
+        .on_close                   = squic_stream_on_close,
+        .on_dg_write                = squic_stream_on_dg_write,
+        .on_datagram                = squic_stream_on_datagram,
+        .on_hsk_done                = squic_stream_on_hsk_done,
+        .on_new_token               = squic_stream_on_new_token,
+        .on_sess_resume_info        = squic_stream_on_sess_resume_info,
+        .on_reset                   = squic_stream_on_reset,
+        .on_conncloseframe_received = squic_stream_on_conncloseframe_received,
     };
 
     if (EXIT_FAILURE == lsquic_global_init(LSQUIC_GLOBAL_CLIENT)) {
@@ -882,6 +938,9 @@ main(int argc, char **argv)
         printf("squic_init failed\n");
         return EXIT_FAILURE;
     }
+
+    // lsquic_set_log_level("debug");
+    // lsquic_log_to_fstream(stderr, 1);
 
     int result = event_base_loop((&sqc)->event_base, 0);
     if (-1 == result) {
