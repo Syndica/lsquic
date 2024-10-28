@@ -73,7 +73,6 @@ typedef struct st_squic {
 struct lsquic_conn_ctx {
     squic_t             *sqc;
     lsquic_conn_t       *conn;
-    int                  is_connected;                              // 0 -> not connected
     char                 address[MAX_ADDRESS_LEN];                  // ip address of peer
     squic_txn_t          txns[MAX_PENDING_TXNS_PER_CONNECTION];     // pending transactions
     int                  n_txns;                                    // number of transactions
@@ -370,7 +369,6 @@ squic_stream_on_hsk_done(lsquic_conn_t *conn, enum lsquic_hsk_status hsk_status)
             break;
         case LSQ_HSK_OK:
             printf("Handshake successful\n");
-            lsquic_conn_make_stream(conn);
             break;
         case LSQ_HSK_RESUMED_OK:
             printf("Handshake successful with session resumption\n");
@@ -480,9 +478,59 @@ squic_get_ssl_ctx(void *peer_ctx, const struct sockaddr *local)
 static void 
 squic_tick_event_handler(int fd, short what, void *ctx)
 {
-    printf("squic_tick_event_handler\n");
     squic_t *sqc = (squic_t *)ctx;
+
+    // Check for any conns with pending transactions and start new streams
+    for (int i = 0; i < sqc->n_conns; i++) {
+        char errbuf[100];
+        int status = lsquic_conn_status(sqc->conns[i]->conn, errbuf, 100);
+
+        switch (status) {
+            case LSCONN_ST_HSK_IN_PROGRESS:
+                printf("connection (%d) status: HSK_IN_PROGRESS\n", i);
+                break;
+            case LSCONN_ST_CONNECTED:
+                printf("connection (%d) status: CONNECTED\n", i);
+                break;
+            case LSCONN_ST_HSK_FAILURE:
+                printf("connection (%d) status: FAILURE\n", i);
+                break;
+            case LSCONN_ST_GOING_AWAY:
+                printf("connection (%d) status: GOING AWAY\n", i);
+                break;
+            case LSCONN_ST_TIMED_OUT:
+                printf("connection (%d) status: TIMED OUT\n", i);
+                break;
+            case LSCONN_ST_RESET:
+                printf("connection (%d) status: RESET\n", i);
+                break;
+            case LSCONN_ST_USER_ABORTED:
+                printf("connection (%d) status: USER ABORTED\n", i);
+                break;
+            case LSCONN_ST_ERROR:
+                printf("connection (%d) status: ERROR\n", i);
+                break;
+            case LSCONN_ST_CLOSED:
+                printf("connection (%d) status: CLOSED\n", i);
+                break;
+            case LSCONN_ST_PEER_GOING_AWAY:
+                printf("connection (%d) status: GOING AWAY\n", i);
+                break;
+            case LSCONN_ST_VERNEG_FAILURE:
+                printf("connection (%d) status: FAILURE\n", i);
+                break;
+        }
+
+        while (LSCONN_ST_CONNECTED == status && sqc->conns[i]->n_stms < sqc->conns[i]->n_txns) {
+            lsquic_conn_make_stream(sqc->conns[i]->conn);
+            sqc->conns[i]->n_stms++;
+        }
+    }
+    
+    // Process the connections
     lsquic_engine_process_conns(sqc->engine);
+
+    // Reset the tick event
     event_add(sqc->tick_event, &sqc->tick_event_timeout);
 }
 
@@ -571,14 +619,6 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
         return;
     }
     conn_ctx->txns[conn_ctx->n_txns++] = txn;
-
-    // If the connection is active, make a stream for all txns
-    if (conn_ctx->is_connected) {
-        while (conn_ctx->n_stms < conn_ctx->n_txns) {
-            lsquic_conn_make_stream(conn_ctx->conn);
-            conn_ctx->n_stms++;
-        }
-    }
 
     // Process connections
     lsquic_engine_process_conns(squic->engine);
@@ -772,14 +812,14 @@ squic_init(squic_t *sqc, squic_socket_t *sqc_socket, struct lsquic_stream_if *st
 
     sqc->tick_event = event_new(sqc->event_base, -1, 0, squic_tick_event_handler, sqc);
     sqc->tick_event_timeout.tv_sec = 0;
-    sqc->tick_event_timeout.tv_usec = 1000000; // 1000ms
+    sqc->tick_event_timeout.tv_usec = 1000000; // 10ms
     if (NULL == sqc->tick_event) {
         printf("event_new failed\n");
         return EXIT_FAILURE;
     }
     event_add(sqc->tick_event, &sqc->tick_event_timeout);
 
-    sqc->read_pkts_event = event_new(sqc->event_base, sqc_socket->fd, EV_READ|EV_PERSIST, squic_read_packets_event_handler, sqc);
+    sqc->read_pkts_event = event_new(sqc->event_base, sqc_socket->fd, EV_READ, squic_read_packets_event_handler, sqc);
     if (NULL == sqc->read_pkts_event) {
         printf("event_new failed\n");
         return EXIT_FAILURE;
