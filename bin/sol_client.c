@@ -15,6 +15,7 @@
 #include <event2/event.h>
 
 #include "lsquic.h"
+#include "test_common.h"
 #include "../src/liblsquic/lsquic_logger.h"
 
 #include <openssl/ssl.h>
@@ -301,6 +302,18 @@ squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
     // Add the connection context to squic
     conn_ctx->sq->conns[conn_ctx->sq->n_conns++] = conn_ctx;
 
+    // Return connection context pointer
+    return conn_ctx;
+}
+
+
+void
+squic_stream_on_hsk_done(lsquic_conn_t *conn, enum lsquic_hsk_status hsk_status) {
+    printf("squic_stream_on_new_conn\n");
+
+    // Get the connection context from connection
+    lsquic_conn_ctx_t *conn_ctx = lsquic_conn_get_ctx(conn);
+
     // Make streams for new transactions
     while (conn_ctx->n_stms < conn_ctx->n_txns) {
         lsquic_conn_make_stream(conn_ctx->conn);
@@ -309,9 +322,6 @@ squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
 
     // Set is_connected
     conn_ctx->is_connected = 1;
-
-    // Return connection context pointer
-    return conn_ctx;
 }
 
 
@@ -393,6 +403,7 @@ squic_stream_on_close(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx)
     printf("squic_stream_on_close\n");
     free(stream_ctx);
 }
+
 
 struct ssl_ctx_st *
 squic_get_ssl_ctx(void *peer_ctx, const struct sockaddr *local)
@@ -704,6 +715,7 @@ main(int argc, char **argv)
     squic_port_t squic_port;
     struct lsquic_stream_if squic_stream_if = {
         .on_new_conn    = squic_stream_on_new_conn,
+        .on_hsk_done    = squic_stream_on_hsk_done,
         .on_conn_closed = squic_stream_on_conn_closed,
         .on_new_stream  = squic_stream_on_new_stream,
         .on_read        = squic_stream_on_read,
