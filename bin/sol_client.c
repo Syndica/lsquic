@@ -29,7 +29,7 @@
 #define MAX_PENDING_TXNS_PER_CONNECTION 100 // Max number of pending transactions per connection
 #define MAX_ADDRESS_LEN 256                 // Maximum address length
 #define MAX_BYTES_SIZE 1232                 // Maximum byte array size
-#define BUFFER_SIZE 2048                    // Buffer size for incoming data
+#define MAX_LINE_BYTES 2048           // Buffer size for incoming data
 
 #define SSL_EXIT_SUCCESS 1
 #define SSL_EXIT_FAILURE 0
@@ -57,7 +57,8 @@ typedef struct st_squic {
     struct event_base              *event_base;
     struct event                   *tick_event,
                                    *read_pkts_event,
-                                   *read_stdin_event;
+                                   *read_stdin_event,
+                                   *usr1_event;
     struct timeval                  tick_event_timeout;
 
     SSL_CTX                        *ssl_ctx;
@@ -151,7 +152,7 @@ squic_parse_txn(const char *input, squic_txn_t *data)
     }
 
     // Create a copy of the bytes string to tokenize safely
-    char bytes_str[BUFFER_SIZE];
+    char bytes_str[MAX_LINE_BYTES];
     strncpy(bytes_str, bytes_start, bytes_end - bytes_start);
     bytes_str[bytes_end - bytes_start] = '\0'; // Null terminate the copied string
 
@@ -363,8 +364,21 @@ squic_stream_on_new_conn(void *_, lsquic_conn_t *conn)
 
 void
 squic_stream_on_hsk_done(lsquic_conn_t *conn, enum lsquic_hsk_status hsk_status) {
-    printf("squic_stream_on_new_conn\n");
-    // TODO: Implement
+    switch (hsk_status) {
+        case LSQ_HSK_FAIL:
+            printf("Handshake failed\n");
+            break;
+        case LSQ_HSK_OK:
+            printf("Handshake successful\n");
+            lsquic_conn_make_stream(conn);
+            break;
+        case LSQ_HSK_RESUMED_OK:
+            printf("Handshake successful with session resumption\n");
+            break;
+        case LSQ_HSK_RESUMED_FAIL:
+            printf("Session resumption failed\n");
+            break;
+    }
 }
 
 
@@ -462,6 +476,7 @@ squic_get_ssl_ctx(void *peer_ctx, const struct sockaddr *local)
 // Event Handlers
 ///////////////////////////////////////////////////////////////////////////////
 
+
 static void 
 squic_tick_event_handler(int fd, short what, void *ctx)
 {
@@ -471,12 +486,51 @@ squic_tick_event_handler(int fd, short what, void *ctx)
     event_add(sqc->tick_event, &sqc->tick_event_timeout);
 }
 
-// evutil_socket_t
+
 static void 
-squic_read_packets_event_handler(int fd, short what, void *ctx)
+squic_read_packets_event_handler(int _a, short _b, void *ctx)
 {
     printf("squic_read_packets_event_handler\n");
+    squic_t *sqc = (squic_t *)ctx;
+
+    struct sockaddr_in client_addr;
+    struct iovec iov[1];
+    unsigned char buf[4096];
+    unsigned char ctl_buf[4096];
+
+    iov[0].iov_base = buf;
+    iov[0].iov_len = 4096;
+
+    struct msghdr msg = {
+        .msg_name       = &client_addr,
+        .msg_namelen    = sizeof(client_addr),
+        .msg_iov        = iov,
+        .msg_iovlen     = 1,
+        .msg_control    = ctl_buf,
+        .msg_controllen = 4096,
+    };
+
+    ssize_t bytes_read = recvmsg(sqc->socket->fd, &msg, 0);
+
+    if (bytes_read < 0) {
+        fprintf(stderr, "Error reading from socket: %s\n", strerror(errno));
+        return;
+    } else {
+        if (0 > lsquic_engine_packet_in(
+            sqc->engine, 
+            buf,
+            bytes_read,
+            (struct sockaddr *)&sqc->socket->sas,
+            (struct sockaddr *)&client_addr,
+            sqc,
+            0
+        )) {
+            printf("Engine error processing packets\n");
+            return;
+        }
+    }
 }
+
 
 static void
 squic_read_stdin_event_handler (int fd, short what, void *arg)
@@ -491,8 +545,8 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
     event_add(squic->read_stdin_event, NULL);
 
     // Read a line of input from stdin
-    char buffer[BUFFER_SIZE];
-    if (EXIT_FAILURE == squic_read_line(STDIN_FILENO, buffer, BUFFER_SIZE)) {
+    char buffer[MAX_LINE_BYTES];
+    if (EXIT_FAILURE == squic_read_line(STDIN_FILENO, buffer, MAX_LINE_BYTES)) {
         printf("Error reading from stdin\n");
         exit(EXIT_FAILURE);
     }
@@ -531,9 +585,33 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
 }
 
 
+static void
+squic_usr1_handler (int fd, short what, void *arg)
+{
+    LSQ_NOTICE("Got SIGUSR1, stopping engine");
+    squic_t *squic = (squic_t *)arg;
+    
+    if (squic->tick_event) {
+        event_del(squic->tick_event);
+        event_free(squic->tick_event);
+    }
+
+    if (squic->read_pkts_event) {
+        event_del(squic->read_pkts_event);
+        event_free(squic->read_pkts_event);
+    }
+
+    if (squic->read_stdin_event) {
+        event_del(squic->read_stdin_event);
+        event_free(squic->read_stdin_event);
+    }
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // Squic Initialization
 ///////////////////////////////////////////////////////////////////////////////
+
 
 int 
 squic_init_dummy_x509_cert(X509 **cert, EVP_PKEY **pkey)
@@ -699,18 +777,28 @@ squic_init(squic_t *sqc, squic_socket_t *sqc_socket, struct lsquic_stream_if *st
         printf("event_new failed\n");
         return EXIT_FAILURE;
     }
+    event_add(sqc->tick_event, &sqc->tick_event_timeout);
 
     sqc->read_pkts_event = event_new(sqc->event_base, sqc_socket->fd, EV_READ|EV_PERSIST, squic_read_packets_event_handler, sqc);
     if (NULL == sqc->read_pkts_event) {
         printf("event_new failed\n");
         return EXIT_FAILURE;
     }
+    event_add(sqc->read_pkts_event, NULL);
 
     sqc->read_stdin_event = event_new(sqc->event_base, STDIN_FILENO, EV_READ, squic_read_stdin_event_handler, sqc);
     if (NULL == sqc->read_stdin_event) {
         printf("event_new failed\n");
         return EXIT_FAILURE;
     }
+    event_add(sqc->read_stdin_event, NULL);
+
+    sqc->usr1_event = evsignal_new(sqc->event_base, SIGUSR1, squic_usr1_handler, sqc);
+    if (NULL == sqc->usr1_event) {
+        printf("evsignal_new failed\n");
+        return EXIT_FAILURE;
+    }
+    evsignal_add(sqc->usr1_event, NULL);
 
     // Initialize the socket
     sqc->socket = sqc_socket;
@@ -754,10 +842,6 @@ main(int argc, char **argv)
         printf("squic_init failed\n");
         return EXIT_FAILURE;
     }
-
-    event_add(sqc.read_pkts_event, NULL);
-    event_add(sqc.read_stdin_event, NULL);
-    event_add(sqc.tick_event, &sqc.tick_event_timeout);
 
     int result = event_base_loop((&sqc)->event_base, 0);
     if (-1 == result) {
