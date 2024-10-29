@@ -3151,6 +3151,8 @@ ietf_full_conn_ci_destroy (struct lsquic_conn *lconn)
     struct lsquic_hash_elem *el;
     unsigned i;
 
+    printf("ietf_full_conn_ci_destroy\n");
+
     if (!(conn->ifc_flags & IFC_SERVER))
     {
         for (streamp = conn->ifc_u.cli.crypto_streams; streamp <
@@ -8759,17 +8761,20 @@ ietf_full_conn_ci_make_stream (struct lsquic_conn *lconn)
     if (handshake_done_or_doing_sess_resume(conn)
         && ietf_full_conn_ci_n_avail_streams(lconn) > 0)
     {
+        printf("(make_stream) handshake done or doing session resume\n");
         if (0 != create_bidi_stream_out(conn))
             ABORT_ERROR("could not create new stream: %s", strerror(errno));
     }
     else if (either_side_going_away(conn))
     {
+        printf("(make_stream) either side going away\n");
         (void) conn->ifc_enpub->enp_stream_if->on_new_stream(
                                     conn->ifc_enpub->enp_stream_if_ctx, NULL);
         LSQ_DEBUG("going away: no streams will be initiated");
     }
     else
     {
+        printf("(make_stream) else\n");
         ++conn->ifc_n_delayed_streams;
         LSQ_DEBUG("delayed stream creation.  Backlog size: %u",
                                                 conn->ifc_n_delayed_streams);

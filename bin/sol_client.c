@@ -270,12 +270,13 @@ squic_get_connection_context(squic_t *sqc, const char *address)
 
     // Initiate connection 
     struct sockaddr_storage peer_sas = squic_create_sockaddr_storage(address);
+    printf("Connecting to %s\n", address);
     if (NULL == lsquic_engine_connect(
-        sqc->engine,                                 // engine
+        sqc->engine,                                // engine
         N_LSQVER,                                   // version
-        (struct sockaddr *)&sqc->socket->sas,            // local_sa
+        (struct sockaddr *)&sqc->socket->sas,       // local_sa
         (struct sockaddr *)&peer_sas,               // peer_sa
-        sqc->ssl_ctx,                                // peer_ctx
+        sqc->ssl_ctx,                               // peer_ctx
         conn_ctx,                                   // conn_ctx
         NULL,                                       // hostname
         0,                                          // base_plpmtu
@@ -322,8 +323,17 @@ squic_packets_out(
         msg.msg_namelen    = sizeof(struct sockaddr_in);
         msg.msg_iov        = specs[n].iov;
         msg.msg_iovlen     = specs[n].iovlen;
+        msg.msg_flags      = 0;
+        msg.msg_control    = NULL;
+        msg.msg_controllen = 0;
         ssize_t bytes_sent = sendmsg(socket->fd, &msg, 0);
         printf("Sent %ld bytes\n", bytes_sent);
+        // for (size_t i = 0; i < specs[n].iovlen; i++) {
+        //     for (size_t j = 0; j < specs[n].iov[i].iov_len; j++) {
+        //         printf("%02x ", ((unsigned char *)specs[n].iov[i].iov_base)[j]);
+        //     }
+        // }
+        // printf("\n");
         if (bytes_sent < 0) {
             perror("sendmsg");
             return -1;
@@ -578,6 +588,8 @@ squic_tick_event_handler(int fd, short what, void *ctx)
             lsquic_conn_make_stream(sqc->conns[i]->conn);
             sqc->conns[i]->n_stms++;
         }
+
+        printf("connection %d has %d available and %d pending streams: version=%d\n", i, lsquic_conn_n_avail_streams(sqc->conns[i]->conn), lsquic_conn_n_pending_streams(sqc->conns[i]->conn), lsquic_conn_quic_version(sqc->conns[i]->conn));
     }
     
     lsquic_engine_process_conns(sqc->engine);
@@ -822,6 +834,7 @@ squic_init(squic_t *sqc, squic_socket_t *sqc_socket, struct lsquic_stream_if *st
 
     // Initialize the engine settings to defaults
     lsquic_engine_init_settings(&sqc->engine_settings, 0);
+    sqc->engine_settings.es_silent_close = 0;
     
     // Initialize the engine API
     sqc->engine_api.ea_alpn = "solana-tpu";

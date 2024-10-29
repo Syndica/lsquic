@@ -432,6 +432,7 @@ void
 lsquic_full_conn_on_peer_config (struct full_conn *conn, unsigned peer_cfcw,
                      unsigned peer_sfcw, unsigned max_streams_out)
 {
+    printf("on peer config: max_streams_out: %u\n", max_streams_out);
     lsquic_stream_t *stream;
     struct lsquic_hash_elem *el;
 
@@ -1388,8 +1389,10 @@ full_conn_ci_n_avail_streams (const lsquic_conn_t *lconn)
 {
     struct full_conn *conn = (struct full_conn *) lconn;
     unsigned stream_count = count_streams(conn, 0);
-    if (conn->fc_cfg.max_streams_out < stream_count)
+    if (conn->fc_cfg.max_streams_out < stream_count) {
+        printf("max_streams_out < stream count\n");
         return 0;
+    }
     return conn->fc_cfg.max_streams_out - stream_count;
 }
 
@@ -2938,7 +2941,7 @@ create_delayed_streams (struct full_conn *conn)
     struct lsquic_stream **new_streams;
 
     stream_count = count_streams(conn, 0);
-
+    printf("(create_delayed_streams) stream_count: %u\n", stream_count);
     if (stream_count >= conn->fc_cfg.max_streams_out)
         return;
 

@@ -915,6 +915,7 @@ static void
 destroy_conn (struct lsquic_engine *engine, struct lsquic_conn *conn,
                                                             lsquic_time_t now)
 {
+    printf("destroy_conn\n");
     struct cce_cid_iter citer;
     const struct conn_cid_elem *cce;
     lsquic_time_t drain_time;
@@ -1975,14 +1976,21 @@ lsquic_engine_connect (lsquic_engine_t *engine, enum lsquic_version version,
     }
     else
         versions = 1u << version;
-    if (versions & LSQUIC_IETF_VERSIONS)
+    if (versions & LSQUIC_IETF_VERSIONS) 
+    {
+        printf("IETF version\n");
         conn = lsquic_ietf_full_conn_client_new(&engine->pub, versions,
                     flags, hostname, base_plpmtu,
                     is_ipv4, sess_resume, sess_resume_len, token, token_sz, peer_ctx);
+    }
     else
+    {
+        printf("GQUIC version\n");
         conn = lsquic_gquic_full_conn_client_new(&engine->pub, versions,
                             flags, hostname, base_plpmtu, is_ipv4,
                             sess_resume, sess_resume_len);
+
+    }
     if (!conn)
         goto err;
     EV_LOG_CREATE_CONN(lsquic_conn_log_cid(conn), local_sa, peer_sa);
@@ -2080,6 +2088,7 @@ engine_decref_conn (lsquic_engine_t *engine, lsquic_conn_t *conn,
             eng_hist_inc(&engine->history, now, sl_del_mini_conns);
         else
             eng_hist_inc(&engine->history, now, sl_del_full_conns);
+        printf("destroy_conn\n");
         destroy_conn(engine, conn, now);
         return NULL;
     }
