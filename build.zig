@@ -134,35 +134,35 @@ pub fn build(b: *std.Build) !void {
 
     lsquic.addCSourceFile(.{ .file = b.path("src/lshpack/lshpack.c") });
 
-    const echo_client = b.addExecutable(.{
-        .name = "echo_client",
+    const sol_client = b.addExecutable(.{
+        .name = "sol_client",
         .target = target,
         .optimize = optimize,
     });
-    b.installArtifact(echo_client);
-    echo_client.linkLibrary(lsquic);
+    b.installArtifact(sol_client);
+    sol_client.linkLibrary(lsquic);
 
     // quick hack to include libevent from homebrew
     if (b.graph.host.result.os.tag == .macos) {
-        echo_client.addLibraryPath(b.path("generated/event2"));
-        echo_client.addIncludePath(b.path("generated"));
+        sol_client.addLibraryPath(b.path("generated/event2"));
+        sol_client.addIncludePath(b.path("generated"));
     }
-    echo_client.linkSystemLibrary("event");
-    echo_client.addIncludePath(b.path("include"));
-    echo_client.addIncludePath(b.path("bin"));
-    echo_client.addIncludePath(boringssl.path("vendor/include"));
+    sol_client.linkSystemLibrary("event");
+    sol_client.addIncludePath(b.path("include"));
+    sol_client.addIncludePath(b.path("bin"));
+    sol_client.addIncludePath(boringssl.path("vendor/include"));
 
     const test_config = b.addConfigHeader(.{
         .style = .{ .cmake = b.path("bin/test_config.h.in") },
     }, .{
         .HAVE_SENDMMSG = 0,
     });
-    echo_client.addConfigHeader(test_config);
+    sol_client.addConfigHeader(test_config);
 
-    echo_client.addCSourceFiles(.{
+    sol_client.addCSourceFiles(.{
         .root = b.path("bin"),
         .files = &.{
-            "echo_client.c",
+            "sol_client.c",
             "prog.c",
             "test_common.c",
             "test_cert.c",
@@ -202,6 +202,6 @@ pub fn build(b: *std.Build) !void {
 
     // TODO: fix all of the UB in the library
     lsquic.root_module.sanitize_c = false;
-    echo_client.root_module.sanitize_c = false;
+    sol_client.root_module.sanitize_c = false;
     echo_server.root_module.sanitize_c = false;
 }
