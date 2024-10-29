@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/queue.h>
+#include <sys/ioctl.h>
 #include <arpa/inet.h>
 #include <signal.h>
 
@@ -562,9 +563,13 @@ squic_tick_event_handler(int fd, short what, void *ctx)
 {
     squic_t *sqc = (squic_t *)ctx;
 
+    printf("tick: n_conns=%d\n", sqc->n_conns);
+
     for (int i = 0; i < sqc->n_conns; i++) {
         char errbuf[100];
         int status = lsquic_conn_status(sqc->conns[i]->conn, errbuf, 100);
+
+        printf("connection (%d) status: %d\n", i, status);
 
         switch (status) {
             case LSCONN_ST_HSK_IN_PROGRESS:
@@ -610,14 +615,30 @@ squic_tick_event_handler(int fd, short what, void *ctx)
     }
     
     lsquic_engine_process_conns(sqc->engine);
+    if (sqc->tick_event) {
+        event_del(sqc->tick_event);
+        event_free(sqc->tick_event);
+    }
+    sqc->tick_event = event_new(sqc->event_base, -1, 0, squic_tick_event_handler, sqc);
     event_add(sqc->tick_event, &sqc->tick_event_timeout);
 }
-
 
 static void 
 squic_read_packets_event_handler(int _a, short _b, void *ctx)
 {   
     squic_t *sqc = (squic_t *)ctx;
+    
+    int bytes_available;
+
+    if (ioctl(sqc->socket->fd, FIONREAD, &bytes_available) == -1) {
+        perror("failed to check bytes available");
+        exit(EXIT_FAILURE);
+    }
+
+    if (bytes_available == 0) {
+        event_add(sqc->read_pkts_event, NULL);
+        return;
+    }
 
     struct sockaddr_in client_addr;
     struct iovec iov[1];
@@ -635,6 +656,8 @@ squic_read_packets_event_handler(int _a, short _b, void *ctx)
         .msg_control    = ctl_buf,
         .msg_controllen = 4096,
     };
+
+    printf("Reading from socket\n");
 
     ssize_t bytes_read = recvmsg(sqc->socket->fd, &msg, 0);
 
@@ -662,10 +685,15 @@ squic_read_packets_event_handler(int _a, short _b, void *ctx)
     event_add(sqc->read_pkts_event, NULL);
 }
 
+int read_txn = 0; // USED TO ENSURE ONLY ONE TRANSACTION IS READ AND PROCESSED FOR DEBUGGING
 
 static void
 squic_read_stdin_event_handler (int fd, short what, void *arg)
 {
+    // ONLY READ ONE TRANSACTION
+    if (read_txn > 0) return;
+    read_txn++;
+
     // Event book keeping
     squic_t *squic = (squic_t *)arg;
     event_add(squic->read_stdin_event, NULL);
@@ -697,6 +725,8 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
         return;
     }
     conn_ctx->txns[conn_ctx->n_txns++] = txn;
+
+    printf("Added transaction to connection context: txn.address=%s txn.bytes_size=%d\n", txn.address, txn.bytes_size);
 
     // Process connections
     lsquic_engine_process_conns(squic->engine);
@@ -851,7 +881,6 @@ squic_init(squic_t *sqc, squic_socket_t *sqc_socket, struct lsquic_stream_if *st
 
     // Initialize the engine settings to defaults
     lsquic_engine_init_settings(&sqc->engine_settings, 0);
-    sqc->engine_settings.es_silent_close = 0;
     
     // Initialize the engine API
     sqc->engine_api.ea_alpn = "solana-tpu";
