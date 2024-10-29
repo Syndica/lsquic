@@ -145,6 +145,13 @@ lsquic_conn_make_stream (struct lsquic_conn *lconn)
 }
 
 
+void
+lsquic_conn_make_uni_stream (struct lsquic_conn *lconn, int priority, const struct lsquic_stream_if *stream_if, void *stream_if_ctx)
+{
+    lconn->cn_if->ci_make_uni_stream(lconn, priority, stream_if, stream_if_ctx);
+}
+
+
 unsigned
 lsquic_conn_n_pending_streams (const struct lsquic_conn *lconn)
 {

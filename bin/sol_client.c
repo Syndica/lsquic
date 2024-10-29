@@ -390,8 +390,8 @@ squic_stream_on_conn_closed(lsquic_conn_t *conn)
     // Remove connection from squic connections
     for (int i = 0; i < conn_ctx->sqc->n_conns; i++) {
         if (conn_ctx->sqc->conns[i] == conn_ctx) {
-            conn_ctx->sqc->conns[i] = conn_ctx->sqc->conns[conn_ctx->sqc->n_conns - 1];
             conn_ctx->sqc->n_conns--;
+            conn_ctx->sqc->conns[i] = conn_ctx->sqc->conns[conn_ctx->sqc->n_conns];
             break;
         }
     }
@@ -417,7 +417,8 @@ squic_stream_on_new_stream(void *ctx, lsquic_stream_t *stream)
     lsquic_stream_ctx_t *stm_ctx = (lsquic_stream_ctx_t *)calloc(1, sizeof(*stm_ctx));
     stm_ctx->stream = stream;
     stm_ctx->conn_ctx = conn_ctx;
-    stm_ctx->txn = conn_ctx->txns[conn_ctx->n_txns--];
+    conn_ctx->n_txns--;
+    stm_ctx->txn = conn_ctx->txns[conn_ctx->n_txns];
 
     // Signal that we want to write
     lsquic_stream_wantwrite(stream, 1);
@@ -446,6 +447,7 @@ squic_stream_on_write(lsquic_stream_t *stream, lsquic_stream_ctx_t *stream_ctx)
         printf("only printed portion of txn bytes!!");
         exit(1);
     }
+    printf("wrote %d of %d bytes to stream\n", bytes_written, stream_ctx->txn.bytes_size);
 
     // Flush and close the stream
     lsquic_stream_flush(stream);
@@ -533,6 +535,23 @@ squic_get_ssl_ctx(void *peer_ctx, const struct sockaddr *local)
 }
 
 
+struct lsquic_stream_if squic_stream_if = {
+    .on_new_conn                = squic_stream_on_new_conn,
+    .on_goaway_received         = squic_stream_on_goaway_received,
+    .on_conn_closed             = squic_stream_on_conn_closed,
+    .on_new_stream              = squic_stream_on_new_stream,
+    .on_read                    = squic_stream_on_read,
+    .on_write                   = squic_stream_on_write,
+    .on_close                   = squic_stream_on_close,
+    .on_dg_write                = squic_stream_on_dg_write,
+    .on_datagram                = squic_stream_on_datagram,
+    .on_hsk_done                = squic_stream_on_hsk_done,
+    .on_new_token               = squic_stream_on_new_token,
+    .on_sess_resume_info        = squic_stream_on_sess_resume_info,
+    .on_reset                   = squic_stream_on_reset,
+    .on_conncloseframe_received = squic_stream_on_conncloseframe_received,
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // Event Handlers
 ///////////////////////////////////////////////////////////////////////////////
@@ -585,11 +604,9 @@ squic_tick_event_handler(int fd, short what, void *ctx)
 
         while (LSCONN_ST_CONNECTED == status && sqc->conns[i]->n_stms < sqc->conns[i]->n_txns) {
             printf("creating new stream for conn: n_txns=%d n_stms=%d\n", sqc->conns[i]->n_txns, sqc->conns[i]->n_stms);
-            lsquic_conn_make_stream(sqc->conns[i]->conn);
+            lsquic_conn_make_uni_stream(sqc->conns[i]->conn, -1, &squic_stream_if, sqc);
             sqc->conns[i]->n_stms++;
         }
-
-        printf("connection %d has %d available and %d pending streams: version=%d\n", i, lsquic_conn_n_avail_streams(sqc->conns[i]->conn), lsquic_conn_n_pending_streams(sqc->conns[i]->conn), lsquic_conn_quic_version(sqc->conns[i]->conn));
     }
     
     lsquic_engine_process_conns(sqc->engine);
@@ -925,22 +942,6 @@ main(int argc, char **argv)
 {
     squic_t sqc;
     squic_socket_t sqc_socket;
-    struct lsquic_stream_if squic_stream_if = {
-        .on_new_conn                = squic_stream_on_new_conn,
-        .on_goaway_received         = squic_stream_on_goaway_received,
-        .on_conn_closed             = squic_stream_on_conn_closed,
-        .on_new_stream              = squic_stream_on_new_stream,
-        .on_read                    = squic_stream_on_read,
-        .on_write                   = squic_stream_on_write,
-        .on_close                   = squic_stream_on_close,
-        .on_dg_write                = squic_stream_on_dg_write,
-        .on_datagram                = squic_stream_on_datagram,
-        .on_hsk_done                = squic_stream_on_hsk_done,
-        .on_new_token               = squic_stream_on_new_token,
-        .on_sess_resume_info        = squic_stream_on_sess_resume_info,
-        .on_reset                   = squic_stream_on_reset,
-        .on_conncloseframe_received = squic_stream_on_conncloseframe_received,
-    };
 
     if (EXIT_FAILURE == lsquic_global_init(LSQUIC_GLOBAL_CLIENT)) {
         printf("lsquic_global_init failed\n");

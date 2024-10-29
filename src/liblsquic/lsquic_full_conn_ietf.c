@@ -8743,6 +8743,13 @@ ietf_full_conn_ci_n_avail_streams (const struct lsquic_conn *lconn)
     return avail_streams_count(conn, conn->ifc_flags & IFC_SERVER, SD_BIDI);
 }
 
+static unsigned
+ietf_full_conn_ci_n_avail_uni_streams (const struct lsquic_conn *lconn)
+{
+    struct ietf_full_conn *const conn = (struct ietf_full_conn *) lconn;
+    return avail_streams_count(conn, conn->ifc_flags & IFC_SERVER, SD_UNI);
+}
+
 
 static int
 handshake_done_or_doing_sess_resume (const struct ietf_full_conn *conn)
@@ -8758,23 +8765,51 @@ ietf_full_conn_ci_make_stream (struct lsquic_conn *lconn)
 {
     struct ietf_full_conn *const conn = (struct ietf_full_conn *) lconn;
 
+    // printf("handshake_done_or_doing_sess_resume: %d\n", handshake_done_or_doing_sess_resume(conn));
+    // printf("ietf_full_conn_ci_n_avail_streams: %u\n", ietf_full_conn_ci_n_avail_streams(lconn));
     if (handshake_done_or_doing_sess_resume(conn)
         && ietf_full_conn_ci_n_avail_streams(lconn) > 0)
     {
-        printf("(make_stream) handshake done or doing session resume\n");
+        // printf("(make_stream) handshake done or doing session resume\n");
         if (0 != create_bidi_stream_out(conn))
             ABORT_ERROR("could not create new stream: %s", strerror(errno));
     }
     else if (either_side_going_away(conn))
     {
-        printf("(make_stream) either side going away\n");
+        // printf("(make_stream) either side going away\n");
         (void) conn->ifc_enpub->enp_stream_if->on_new_stream(
                                     conn->ifc_enpub->enp_stream_if_ctx, NULL);
         LSQ_DEBUG("going away: no streams will be initiated");
     }
     else
     {
-        printf("(make_stream) else\n");
+        // printf("(make_stream) else\n");
+        ++conn->ifc_n_delayed_streams;
+        LSQ_DEBUG("delayed stream creation.  Backlog size: %u",
+                                                conn->ifc_n_delayed_streams);
+    }
+}
+
+static void
+ietf_full_conn_ci_make_uni_stream (struct lsquic_conn *lconn, int priority, const struct lsquic_stream_if *stream_if, void *stream_if_ctx)
+{
+    struct ietf_full_conn *const conn = (struct ietf_full_conn *) lconn;
+
+    if (handshake_done_or_doing_sess_resume(conn)
+        && ietf_full_conn_ci_n_avail_uni_streams(lconn) > 0)
+    {   
+        printf("make_uni_stream: creating uni stream\n");
+        if (0 != create_uni_stream_out(conn, priority, stream_if, stream_if_ctx))
+            ABORT_ERROR("could not create new stream: %s", strerror(errno));
+    }
+    else if (either_side_going_away(conn))
+    {
+        (void) conn->ifc_enpub->enp_stream_if->on_new_stream(
+                                    conn->ifc_enpub->enp_stream_if_ctx, NULL);
+        LSQ_DEBUG("going away: no streams will be initiated");
+    }
+    else
+    {
         ++conn->ifc_n_delayed_streams;
         LSQ_DEBUG("delayed stream creation.  Backlog size: %u",
                                                 conn->ifc_n_delayed_streams);
@@ -9037,6 +9072,7 @@ ietf_full_conn_ci_log_stats (struct lsquic_conn *lconn)
     .ci_is_push_enabled      =  ietf_full_conn_ci_is_push_enabled, \
     .ci_is_tickable          =  ietf_full_conn_ci_is_tickable, \
     .ci_make_stream          =  ietf_full_conn_ci_make_stream, \
+    .ci_make_uni_stream      =  ietf_full_conn_ci_make_uni_stream, \
     .ci_mtu_probe_acked      =  ietf_full_conn_ci_mtu_probe_acked, \
     .ci_n_avail_streams      =  ietf_full_conn_ci_n_avail_streams, \
     .ci_n_pending_streams    =  ietf_full_conn_ci_n_pending_streams, \
