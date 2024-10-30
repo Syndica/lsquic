@@ -16,8 +16,8 @@
 
 #include <event2/event.h>
 
+#include "sol_types.h"
 #include "lsquic.h"
-#include "test_common.h"
 #include "../src/liblsquic/lsquic_logger.h"
 
 #include <openssl/ssl.h>
@@ -43,12 +43,6 @@ typedef struct st_squic_socket {
 } squic_socket_t;
 
 
-typedef struct st_squic_txn
-{
-    char            address[MAX_ADDRESS_LEN];
-    int             bytes_size;
-    unsigned char   bytes[MAX_BYTES_SIZE];
-} squic_txn_t;
 
 
 typedef struct st_squic {
@@ -80,14 +74,6 @@ struct lsquic_conn_ctx {
     int                  n_txns;                                    // number of transactions
     int                  n_stms;                                    // number of streams
 };
-
-
-struct lsquic_stream_ctx {
-    lsquic_stream_t     *stream;                
-    lsquic_conn_ctx_t   *conn_ctx;              
-    squic_txn_t          txn;
-};
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // Squic Helpers

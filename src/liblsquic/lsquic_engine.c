@@ -548,13 +548,13 @@ lsquic_engine_new (unsigned flags,
 
     if (!api->ea_packets_out)
     {
-        LSQ_ERROR("packets_out callback is not specified");
+        printf("packets_out callback is not specified");
         return NULL;
     }
 
     if (!api->ea_stream_if)
     {
-        LSQ_ERROR("stream interface is not specified");
+        printf("stream interface is not specified");
         return NULL;
     }
 
@@ -563,7 +563,7 @@ lsquic_engine_new (unsigned flags,
         alpn_len = strlen(api->ea_alpn);
         if (alpn_len < 1 || alpn_len > 255)
         {
-            LSQ_ERROR("ALPN string length invalid: %zd bytes", alpn_len);
+            printf("ALPN string length invalid: %zd bytes", alpn_len);
             return NULL;
         }
     }
@@ -574,7 +574,7 @@ lsquic_engine_new (unsigned flags,
                 0 != lsquic_engine_check_settings(api->ea_settings, flags,
                                                     err_buf, sizeof(err_buf)))
     {
-        LSQ_ERROR("cannot create engine: %s", err_buf);
+        printf("cannot create engine: %s", err_buf);
         return NULL;
     }
 
@@ -596,7 +596,7 @@ lsquic_engine_new (unsigned flags,
                                     engine->pub.enp_settings.es_versions);
     if (tag_buf_len <= 0)
     {
-        LSQ_ERROR("cannot generate version tags buffer");
+        printf("cannot generate version tags buffer");
         free(engine);
         return NULL;
     }
@@ -770,7 +770,7 @@ lsquic_engine_new (unsigned flags,
             if (0 != regcomp(&engine->lose_packets_re, env,
                                                     REG_EXTENDED|REG_NOSUB))
             {
-                LSQ_ERROR("could not compile lost packet regex `%s'", env);
+                printf("could not compile lost packet regex `%s'", env);
                 return NULL;
             }
             engine->flags |= ENG_LOSE_PACKETS;
@@ -811,7 +811,7 @@ lsquic_engine_new (unsigned flags,
                         EVP_aead_aes_128_gcm(), lsquic_retry_key_buf[i],
                         IETF_RETRY_KEY_SZ, 16, NULL))
         {
-            LSQ_ERROR("could not initialize retry AEAD ctx #%u", i);
+            printf("could not initialize retry AEAD ctx #%u", i);
             lsquic_engine_destroy(engine);
             return NULL;
         }
@@ -1041,7 +1041,7 @@ maybe_grow_conn_heaps (struct lsquic_engine *engine)
     els = malloc(sizeof(els[0]) * count);
     if (!els)
     {
-        LSQ_ERROR("%s: malloc failed", __func__);
+        printf("%s: malloc failed", __func__);
         return -1;
     }
 
@@ -1906,7 +1906,7 @@ add_conn_to_hash (struct lsquic_engine *engine, struct lsquic_conn *conn,
         cce = find_free_cce(conn);
         if (!cce)
         {
-            LSQ_ERROR("cannot find free CCE");
+            printf("cannot find free CCE");
             return -1;
         }
         cce->cce_port = sa2port(local_sa);
@@ -1943,14 +1943,14 @@ lsquic_engine_connect (lsquic_engine_t *engine, enum lsquic_version version,
 
     if (engine->flags & ENG_SERVER)
     {
-        LSQ_ERROR("`%s' must only be called in client mode", __func__);
+        printf("`%s' must only be called in client mode", __func__);
         goto err;
     }
 
     if (engine->flags & ENG_CONNS_BY_ADDR
                         && find_conn_by_addr(engine->conns_hash, local_sa))
     {
-        LSQ_ERROR("cannot have more than one connection on the same port");
+        printf("cannot have more than one connection on the same port");
         goto err;
     }
 

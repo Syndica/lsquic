@@ -130,9 +130,11 @@ pub fn build(b: *std.Build) !void {
             "lsquic_varint.c",
             "lsquic_version.c",
         },
+        .flags = &.{"-DLSQUIC_LOWEST_LOG_LEVEL=LSQ_LOG_DEBUG"},
     });
-
     lsquic.addCSourceFile(.{ .file = b.path("src/lshpack/lshpack.c") });
+
+    // demos
 
     const sol_client = b.addExecutable(.{
         .name = "sol_client",
@@ -161,13 +163,7 @@ pub fn build(b: *std.Build) !void {
 
     sol_client.addCSourceFiles(.{
         .root = b.path("bin"),
-        .files = &.{
-            "sol_client.c",
-            "prog.c",
-            "test_common.c",
-            "test_cert.c",
-            "../generated/lsquic_versions_to_string.c",
-        },
+        .files = &.{"sol_client.c"},
         // we need to specify the stack-protector here since doing
         // sol_client.root_module.stack_protector = true passes in a different
         // flag to clang, which seemingly miscompiles on clang 18, causing some
@@ -175,38 +171,7 @@ pub fn build(b: *std.Build) !void {
         .flags = &.{"-fstack-protector"},
     });
 
-    const echo_server = b.addExecutable(.{
-        .name = "echo_server",
-        .target = target,
-        .optimize = optimize,
-    });
-    b.installArtifact(echo_server);
-    echo_server.linkLibrary(lsquic);
-
-    // quick hack to include libevent from homebrew
-    if (b.graph.host.result.os.tag == .macos) {
-        echo_server.addLibraryPath(b.path("generated/event2"));
-        echo_server.addIncludePath(b.path("generated"));
-    }
-    echo_server.linkSystemLibrary("event");
-    echo_server.addIncludePath(b.path("include"));
-    echo_server.addIncludePath(b.path("bin"));
-    echo_server.addIncludePath(boringssl.path("vendor/include"));
-    echo_server.addConfigHeader(test_config);
-
-    echo_server.addCSourceFiles(.{
-        .root = b.path("bin"),
-        .files = &.{
-            "echo_server.c",
-            "prog.c",
-            "test_common.c",
-            "test_cert.c",
-            "../generated/lsquic_versions_to_string.c",
-        },
-    });
-
     // TODO: fix all of the UB in the library
     lsquic.root_module.sanitize_c = false;
     sol_client.root_module.sanitize_c = false;
-    echo_server.root_module.sanitize_c = false;
 }
