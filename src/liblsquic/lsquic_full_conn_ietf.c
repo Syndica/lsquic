@@ -2511,6 +2511,7 @@ static int
 generate_stop_sending_frame_by_id (struct ietf_full_conn *conn,
                 lsquic_stream_id_t stream_id, enum http_error_code error_code)
 {
+    printf("generate_stop_sending_frame_by_id\n");
     struct lsquic_packet_out *packet_out;
     size_t need;
     int w;
@@ -2911,10 +2912,10 @@ process_stream_ready_to_send (struct ietf_full_conn *conn,
             r &= lsquic_sendctl_gen_stream_blocked_frame(&conn->ifc_send_ctl,
                                                          stream);
     }
-    if (stream->sm_qflags & SMQF_SEND_RST)
-        r &= generate_rst_stream_frame(conn, stream);
-    if (stream->sm_qflags & SMQF_SEND_STOP_SENDING)
-        r &= generate_stop_sending_frame(conn, stream);
+    // if (stream->sm_qflags & SMQF_SEND_RST)
+    //     r &= generate_rst_stream_frame(conn, stream);
+    // if (stream->sm_qflags & SMQF_SEND_STOP_SENDING)
+    //     r &= generate_stop_sending_frame(conn, stream);
     return r;
 }
 

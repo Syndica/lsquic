@@ -97,7 +97,7 @@ struct lsquic_stream_ctx {
 void
 squic_print_txn(const squic_txn_t *data)
 {
-    printf("Transaction: address=%s bytes_size=%d bytes={", data->address, data->bytes_size);
+    printf("transaction: address=%s bytes_size=%d bytes={", data->address, data->bytes_size);
     for (int i = 0; i < data->bytes_size; i++)
     {
         printf("%s%d", i == 0 ? "" : ", ", data->bytes[i]);
@@ -119,27 +119,27 @@ squic_parse_txn(const char *input, squic_txn_t *data)
 
     if (!address_start || !bytes_size_start || !bytes_start)
     {
-        printf("Error: Invalid input format.\n");
+        printf("error: invalid input format, %s", input);
         return EXIT_FAILURE; // Input string format is incorrect
     }
 
     // Parse the address (use a length limit to avoid overflow)
     if (sscanf(address_start, "address=%255s", data->address) != 1)
     {
-        printf("Error: Failed to parse the address.\n");
+        printf("error: failed to parse the address.\n");
         return EXIT_FAILURE; // Failed to parse the address
     }
 
     // Parse the bytes size
     if (sscanf(bytes_size_start, "bytes_size=%d", &data->bytes_size) != 1)
     {
-        printf("Error: Failed to parse bytes size.\n");
+        printf("error: failed to parse bytes size.\n");
         return EXIT_FAILURE; // Failed to parse bytes size
     }
 
     if (data->bytes_size > MAX_BYTES_SIZE || data->bytes_size < 0)
     {
-        printf("Error: Bytes size out of range.\n");
+        printf("error: bytes size out of range.\n");
         return EXIT_FAILURE; // Bytes size is out of valid range
     }
 
@@ -148,7 +148,7 @@ squic_parse_txn(const char *input, squic_txn_t *data)
     char *bytes_end = strchr(bytes_start, '}');
     if (!bytes_end)
     {
-        printf("Error: Missing closing brace in bytes array.\n");
+        printf("error: missing closing brace in bytes array.\n");
         return EXIT_FAILURE; // Malformed input, missing closing brace
     }
 
@@ -165,7 +165,7 @@ squic_parse_txn(const char *input, squic_txn_t *data)
         int byte_value;
         if (sscanf(byte_token, "%d", &byte_value) != 1 || byte_value < 0 || byte_value > 255)
         {
-            printf("Error: Invalid byte value.\n");
+            printf("error: invalid byte value.\n");
             return EXIT_FAILURE; // Invalid byte value
         }
         data->bytes[byte_count++] = (unsigned char)byte_value;
@@ -174,7 +174,7 @@ squic_parse_txn(const char *input, squic_txn_t *data)
 
     if (byte_count != data->bytes_size)
     {
-        printf("Error: Parsed byte count %d does not match bytes_size %d.\n", byte_count, data->bytes_size);
+        printf("error: parsed byte count %d does not match bytes_size %d.\n", byte_count, data->bytes_size);
         return EXIT_FAILURE; // Parsed byte count does not match bytes_size
     }
 
@@ -262,7 +262,7 @@ squic_get_connection_context(squic_t *sqc, const char *address)
     // Create new connection context
     lsquic_conn_ctx_t *conn_ctx = (lsquic_conn_ctx_t *)calloc(1, sizeof(lsquic_conn_ctx_t));
     if (NULL == conn_ctx) {
-        printf("Error allocating memory for connection context\n");
+        printf("error allocating memory for connection context\n");
         exit(EXIT_FAILURE);
     }
     conn_ctx->sqc = sqc;
@@ -271,7 +271,7 @@ squic_get_connection_context(squic_t *sqc, const char *address)
 
     // Initiate connection 
     struct sockaddr_storage peer_sas = squic_create_sockaddr_storage(address);
-    printf("Connecting to %s\n", address);
+    printf("connecting to %s\n", address);
     if (NULL == lsquic_engine_connect(
         sqc->engine,                                // engine
         N_LSQVER,                                   // version
@@ -287,7 +287,7 @@ squic_get_connection_context(squic_t *sqc, const char *address)
         0                                           // token_len
     ))
     {
-        printf("Error connecting to server\n");
+        printf("error connecting to server\n");
         exit(EXIT_FAILURE);
     }
 
@@ -328,7 +328,7 @@ squic_packets_out(
         msg.msg_control    = NULL;
         msg.msg_controllen = 0;
         ssize_t bytes_sent = sendmsg(socket->fd, &msg, 0);
-        printf("Sent %ld bytes\n", bytes_sent);
+        printf("sent %ld bytes\n", bytes_sent);
         // for (size_t i = 0; i < specs[n].iovlen; i++) {
         //     for (size_t j = 0; j < specs[n].iov[i].iov_len; j++) {
         //         printf("%02x ", ((unsigned char *)specs[n].iov[i].iov_base)[j]);
@@ -336,7 +336,7 @@ squic_packets_out(
         // }
         // printf("\n");
         if (bytes_sent < 0) {
-            perror("sendmsg");
+            printf("error sending packet\n");
             return -1;
         }
     }
@@ -484,16 +484,16 @@ void
 squic_stream_on_hsk_done(lsquic_conn_t *conn, enum lsquic_hsk_status hsk_status) {
     switch (hsk_status) {
         case LSQ_HSK_FAIL:
-            printf("Handshake failed\n");
+            printf("handshake failed\n");
             break;
         case LSQ_HSK_OK:
-            printf("Handshake successful\n");
+            printf("handshake successful\n");
             break;
         case LSQ_HSK_RESUMED_OK:
-            printf("Handshake successful with session resumption\n");
+            printf("handshake successful with session resumption\n");
             break;
         case LSQ_HSK_RESUMED_FAIL:
-            printf("Session resumption failed\n");
+            printf("session resumption failed\n");
             break;
     }
 }
@@ -553,6 +553,7 @@ struct lsquic_stream_if squic_stream_if = {
     .on_conncloseframe_received = squic_stream_on_conncloseframe_received,
 };
 
+
 ///////////////////////////////////////////////////////////////////////////////
 // Event Handlers
 ///////////////////////////////////////////////////////////////////////////////
@@ -561,9 +562,9 @@ struct lsquic_stream_if squic_stream_if = {
 static void 
 squic_tick_event_handler(int fd, short what, void *ctx)
 {
-    squic_t *sqc = (squic_t *)ctx;
+    printf("ev-handler: tick\n");
 
-    printf("tick: n_conns=%d\n", sqc->n_conns);
+    squic_t *sqc = (squic_t *)ctx;
 
     for (int i = 0; i < sqc->n_conns; i++) {
         char errbuf[100];
@@ -615,28 +616,27 @@ squic_tick_event_handler(int fd, short what, void *ctx)
     }
     
     lsquic_engine_process_conns(sqc->engine);
-    if (sqc->tick_event) {
-        event_del(sqc->tick_event);
-        event_free(sqc->tick_event);
-    }
-    sqc->tick_event = event_new(sqc->event_base, -1, 0, squic_tick_event_handler, sqc);
-    event_add(sqc->tick_event, &sqc->tick_event_timeout);
 }
 
+
 static void 
-squic_read_packets_event_handler(int _a, short _b, void *ctx)
+squic_read_packets_event_handler(int fd, short trigger, void *ctx)
 {   
+    printf("ev-handler: read_packets\n");
+
     squic_t *sqc = (squic_t *)ctx;
+
+    event_add(sqc->read_pkts_event, NULL);
     
     int bytes_available;
 
     if (ioctl(sqc->socket->fd, FIONREAD, &bytes_available) == -1) {
-        perror("failed to check bytes available");
+        printf("failed to check bytes available\n");
         exit(EXIT_FAILURE);
     }
 
     if (bytes_available == 0) {
-        event_add(sqc->read_pkts_event, NULL);
+        printf("no bytes available\n");
         return;
     }
 
@@ -657,14 +657,14 @@ squic_read_packets_event_handler(int _a, short _b, void *ctx)
         .msg_controllen = 4096,
     };
 
-    printf("Reading from socket\n");
+    printf("reading from socket\n");
 
     ssize_t bytes_read = recvmsg(sqc->socket->fd, &msg, 0);
 
-    printf("Received %ld bytes\n", bytes_read);
+    printf("received %ld bytes\n", bytes_read);
 
     if (bytes_read < 0) {
-        fprintf(stderr, "Error reading from socket: %s\n", strerror(errno));
+        printf("error reading from socket: %s\n", strerror(errno));
         return;
     } else {
         if (0 > lsquic_engine_packet_in(
@@ -676,39 +676,32 @@ squic_read_packets_event_handler(int _a, short _b, void *ctx)
             sqc,
             0
         )) {
-            printf("Engine error processing packets\n");
+            printf("engine error processing packets\n");
             return;
         }
     }
-
-    lsquic_engine_process_conns(sqc->engine);
-    event_add(sqc->read_pkts_event, NULL);
 }
 
-int read_txn = 0; // USED TO ENSURE ONLY ONE TRANSACTION IS READ AND PROCESSED FOR DEBUGGING
 
 static void
-squic_read_stdin_event_handler (int fd, short what, void *arg)
+squic_read_stdin_event_handler (int fd, short trigger, void *arg)
 {
-    // ONLY READ ONE TRANSACTION
-    if (read_txn > 0) return;
-    read_txn++;
+    printf("ev-handler: read_stdin\n");
 
-    // Event book keeping
     squic_t *squic = (squic_t *)arg;
+
     event_add(squic->read_stdin_event, NULL);
 
-    // Read a line of input from stdin
     char buffer[MAX_LINE_BYTES];
     if (EXIT_FAILURE == squic_read_line(STDIN_FILENO, buffer, MAX_LINE_BYTES)) {
-        printf("Error reading from stdin\n");
+        printf("error reading from stdin\n");
         exit(EXIT_FAILURE);
     }
 
     // Parse the transaction data
     squic_txn_t txn = {0};
     if (squic_parse_txn(buffer, &txn)) {
-        printf("Error parsing transaction data\n");
+        printf("failed to parse transaction data\n");
         exit(EXIT_FAILURE);
     }
 
@@ -724,17 +717,24 @@ squic_read_stdin_event_handler (int fd, short what, void *arg)
         printf("exceeded max pending transactions, skipping transaction");
         return;
     }
-    conn_ctx->txns[conn_ctx->n_txns++] = txn;
 
-    printf("Added transaction to connection context: txn.address=%s txn.bytes_size=%d\n", txn.address, txn.bytes_size);
+    int txn_exists = 0;
+    for (int i = 0; i < conn_ctx->n_txns; i++) {
+        if (memcmp(conn_ctx->txns[i].address, txn.address, MAX_ADDRESS_LEN) == 0) {
+            txn_exists = 1;
+            break;
+        }
+    }
 
-    // Process connections
-    lsquic_engine_process_conns(squic->engine);
+    if (!txn_exists) {
+        printf("added transaction to connection context: txn.address=%s txn.bytes_size=%d\n", txn.address, txn.bytes_size);
+        conn_ctx->txns[conn_ctx->n_txns++] = txn;
+    }
 }
 
 
 static void
-squic_usr1_handler (int fd, short what, void *arg)
+squic_usr1_handler (int fd, short trigger, void *arg)
 {
     LSQ_NOTICE("Got SIGUSR1, stopping engine");
     squic_t *squic = (squic_t *)arg;
@@ -911,6 +911,19 @@ squic_init(squic_t *sqc, squic_socket_t *sqc_socket, struct lsquic_stream_if *st
         return EXIT_FAILURE;
     }
 
+    // Initialize the socket
+    sqc->socket = sqc_socket;
+    sqc->socket->fd = socket(AF_INET, SOCK_DGRAM, 0);
+    sqc->socket->sas = squic_create_sockaddr_storage("127.0.0.1:4444");
+    if (-1 == sqc->socket->fd) {
+        printf("socket failed\n");
+        return EXIT_FAILURE;
+    }
+    if (0 != bind(sqc->socket->fd, (struct sockaddr *)&sqc->socket->sas, sizeof(struct sockaddr_in))) {
+        printf("bind failed\n");
+        return EXIT_FAILURE;
+    }
+
     // Create event base and events
     sqc->event_base = event_base_new();
     if (NULL == sqc->event_base) {
@@ -918,9 +931,9 @@ squic_init(squic_t *sqc, squic_socket_t *sqc_socket, struct lsquic_stream_if *st
         return EXIT_FAILURE;
     }
 
-    sqc->tick_event = event_new(sqc->event_base, -1, 0, squic_tick_event_handler, sqc);
+    sqc->tick_event = event_new(sqc->event_base, -1, EV_PERSIST, squic_tick_event_handler, sqc);
     sqc->tick_event_timeout.tv_sec = 0;
-    sqc->tick_event_timeout.tv_usec = 1000000; // 10ms
+    sqc->tick_event_timeout.tv_usec = 500000;
     if (NULL == sqc->tick_event) {
         printf("event_new failed\n");
         return EXIT_FAILURE;
@@ -948,18 +961,6 @@ squic_init(squic_t *sqc, squic_socket_t *sqc_socket, struct lsquic_stream_if *st
     }
     evsignal_add(sqc->usr1_event, NULL);
 
-    // Initialize the socket
-    sqc->socket = sqc_socket;
-    sqc->socket->fd = socket(AF_INET, SOCK_DGRAM, 0);
-    sqc->socket->sas = squic_create_sockaddr_storage("127.0.0.1:4444");
-    if (-1 == sqc->socket->fd) {
-        printf("socket failed\n");
-        return EXIT_FAILURE;
-    }
-    if (0 != bind(sqc->socket->fd, (struct sockaddr *)&sqc->socket->sas, sizeof(struct sockaddr_in))) {
-        printf("bind failed\n");
-        return EXIT_FAILURE;
-    }
 
     // Success
     return EXIT_SUCCESS;
