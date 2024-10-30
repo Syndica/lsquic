@@ -168,6 +168,11 @@ pub fn build(b: *std.Build) !void {
             "test_cert.c",
             "../generated/lsquic_versions_to_string.c",
         },
+        // we need to specify the stack-protector here since doing
+        // sol_client.root_module.stack_protector = true passes in a different
+        // flag to clang, which seemingly miscompiles on clang 18, causing some
+        // very subtle UB which itself causes handshakes to fail.
+        .flags = &.{"-fstack-protector"},
     });
 
     const echo_server = b.addExecutable(.{
