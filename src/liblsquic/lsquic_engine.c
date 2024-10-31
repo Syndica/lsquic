@@ -915,7 +915,6 @@ static void
 destroy_conn (struct lsquic_engine *engine, struct lsquic_conn *conn,
                                                             lsquic_time_t now)
 {
-    printf("destroy_conn\n");
     struct cce_cid_iter citer;
     const struct conn_cid_elem *cce;
     lsquic_time_t drain_time;
@@ -1978,7 +1977,6 @@ lsquic_engine_connect (lsquic_engine_t *engine, enum lsquic_version version,
         versions = 1u << version;
     if (versions & LSQUIC_IETF_VERSIONS) 
     {
-        printf("IETF version\n");
         conn = lsquic_ietf_full_conn_client_new(&engine->pub, versions,
                     flags, hostname, base_plpmtu,
                     is_ipv4, sess_resume, sess_resume_len, token, token_sz, peer_ctx);

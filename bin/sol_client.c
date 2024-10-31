@@ -258,6 +258,7 @@ squic_get_connection_context(squic_t *sqc, const char *address)
     // Initiate connection 
     struct sockaddr_storage peer_sas = squic_create_sockaddr_storage(address);
     printf("connecting to %s\n", address);
+
     if (NULL == lsquic_engine_connect(
         sqc->engine,                                // engine
         N_LSQVER,                                   // version
@@ -315,12 +316,6 @@ squic_packets_out(
         msg.msg_controllen = 0;
         ssize_t bytes_sent = sendmsg(socket->fd, &msg, 0);
         printf("sent %ld bytes\n", bytes_sent);
-        // for (size_t i = 0; i < specs[n].iovlen; i++) {
-        //     for (size_t j = 0; j < specs[n].iov[i].iov_len; j++) {
-        //         printf("%02x ", ((unsigned char *)specs[n].iov[i].iov_base)[j]);
-        //     }
-        // }
-        // printf("\n");
         if (bytes_sent < 0) {
             printf("error sending packet\n");
             return -1;

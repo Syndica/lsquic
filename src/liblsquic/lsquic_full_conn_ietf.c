@@ -3152,8 +3152,6 @@ ietf_full_conn_ci_destroy (struct lsquic_conn *lconn)
     struct lsquic_hash_elem *el;
     unsigned i;
 
-    printf("ietf_full_conn_ci_destroy\n");
-
     if (!(conn->ifc_flags & IFC_SERVER))
     {
         for (streamp = conn->ifc_u.cli.crypto_streams; streamp <
@@ -8799,7 +8797,6 @@ ietf_full_conn_ci_make_uni_stream (struct lsquic_conn *lconn, int priority, cons
     if (handshake_done_or_doing_sess_resume(conn)
         && ietf_full_conn_ci_n_avail_uni_streams(lconn) > 0)
     {   
-        printf("make_uni_stream: creating uni stream\n");
         if (0 != create_uni_stream_out(conn, priority, stream_if, stream_if_ctx))
             ABORT_ERROR("could not create new stream: %s", strerror(errno));
     }
