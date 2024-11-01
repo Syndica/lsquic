@@ -666,8 +666,9 @@ lsquic_engine_new (unsigned flags,
     engine->pub.enp_verify_cert  = api->ea_verify_cert;
     engine->pub.enp_verify_ctx   = api->ea_verify_ctx;
     engine->pub.enp_engine = engine;
-    if (hash_conns_by_addr(engine))
-        engine->flags |= ENG_CONNS_BY_ADDR;
+    // TODO(rex): figure out why we need to disable this flag
+    // if (hash_conns_by_addr(engine))
+    //     engine->flags |= ENG_CONNS_BY_ADDR;
     engine->conns_hash = lsquic_hash_create();
     engine->pub.enp_tokgen = lsquic_tg_new(&engine->pub);
     if (!engine->pub.enp_tokgen)
