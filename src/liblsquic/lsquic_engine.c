@@ -548,13 +548,13 @@ lsquic_engine_new (unsigned flags,
 
     if (!api->ea_packets_out)
     {
-        printf("packets_out callback is not specified");
+        LSQ_ERROR("packets_out callback is not specified");
         return NULL;
     }
 
     if (!api->ea_stream_if)
     {
-        printf("stream interface is not specified");
+        LSQ_ERROR("stream interface is not specified");
         return NULL;
     }
 
@@ -563,7 +563,7 @@ lsquic_engine_new (unsigned flags,
         alpn_len = strlen(api->ea_alpn);
         if (alpn_len < 1 || alpn_len > 255)
         {
-            printf("ALPN string length invalid: %zd bytes", alpn_len);
+            LSQ_ERROR("ALPN string length invalid: %zd bytes", alpn_len);
             return NULL;
         }
     }
@@ -574,7 +574,7 @@ lsquic_engine_new (unsigned flags,
                 0 != lsquic_engine_check_settings(api->ea_settings, flags,
                                                     err_buf, sizeof(err_buf)))
     {
-        printf("cannot create engine: %s", err_buf);
+        LSQ_ERROR("cannot create engine: %s", err_buf);
         return NULL;
     }
 
@@ -596,7 +596,7 @@ lsquic_engine_new (unsigned flags,
                                     engine->pub.enp_settings.es_versions);
     if (tag_buf_len <= 0)
     {
-        printf("cannot generate version tags buffer");
+        LSQ_ERROR("cannot generate version tags buffer");
         free(engine);
         return NULL;
     }
@@ -771,7 +771,7 @@ lsquic_engine_new (unsigned flags,
             if (0 != regcomp(&engine->lose_packets_re, env,
                                                     REG_EXTENDED|REG_NOSUB))
             {
-                printf("could not compile lost packet regex `%s'", env);
+                LSQ_ERROR("could not compile lost packet regex `%s'", env);
                 return NULL;
             }
             engine->flags |= ENG_LOSE_PACKETS;
@@ -812,7 +812,7 @@ lsquic_engine_new (unsigned flags,
                         EVP_aead_aes_128_gcm(), lsquic_retry_key_buf[i],
                         IETF_RETRY_KEY_SZ, 16, NULL))
         {
-            printf("could not initialize retry AEAD ctx #%u", i);
+            LSQ_ERROR("could not initialize retry AEAD ctx #%u", i);
             lsquic_engine_destroy(engine);
             return NULL;
         }
@@ -1906,7 +1906,7 @@ add_conn_to_hash (struct lsquic_engine *engine, struct lsquic_conn *conn,
         cce = find_free_cce(conn);
         if (!cce)
         {
-            printf("cannot find free CCE");
+            LSQ_ERROR("cannot find free CCE");
             return -1;
         }
         cce->cce_port = sa2port(local_sa);
@@ -1984,7 +1984,6 @@ lsquic_engine_connect (lsquic_engine_t *engine, enum lsquic_version version,
     }
     else
     {
-        printf("GQUIC version\n");
         conn = lsquic_gquic_full_conn_client_new(&engine->pub, versions,
                             flags, hostname, base_plpmtu, is_ipv4,
                             sess_resume, sess_resume_len);
@@ -2087,7 +2086,6 @@ engine_decref_conn (lsquic_engine_t *engine, lsquic_conn_t *conn,
             eng_hist_inc(&engine->history, now, sl_del_mini_conns);
         else
             eng_hist_inc(&engine->history, now, sl_del_full_conns);
-        printf("destroy_conn\n");
         destroy_conn(engine, conn, now);
         return NULL;
     }
