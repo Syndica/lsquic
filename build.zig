@@ -28,14 +28,20 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const ssl = boringssl.artifact("ssl");
+    const crypto = boringssl.artifact("crypto");
+
+    // TODO: remove in Zig 0.14.1 (hopefully)
+    ssl.bundle_ubsan_rt = true;
+    crypto.bundle_ubsan_rt = true;
 
     lsquic.addIncludePath(b.path("include"));
     lsquic.addIncludePath(b.path("src/lshpack"));
     lsquic.addIncludePath(b.path("src/liblsquic"));
     lsquic.addIncludePath(b.path("src/liblsquic/ls-qpack/"));
     lsquic.addIncludePath(boringssl.path("vendor/include"));
-    lsquic.linkLibrary(boringssl.artifact("ssl"));
-    lsquic.linkLibrary(boringssl.artifact("crypto"));
+    lsquic.linkLibrary(ssl);
+    lsquic.linkLibrary(crypto);
 
     const zlib_dep = b.dependency("zlib", .{
         .target = target,
