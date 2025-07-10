@@ -4,10 +4,20 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lsquic = b.addStaticLibrary(.{
+    const force_pic = b.option(
+        bool,
+        "force_pic",
+        "Force PIC enabled when building the libraries",
+    );
+
+    const lsquic = b.addLibrary(.{
         .name = "lsquic",
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            // TODO: remove this when passing optionals through `b.option` is possible.
+            .pic = if (force_pic == true) true else null,
+        }),
     });
     lsquic.linkLibC();
     b.installArtifact(lsquic);
@@ -27,6 +37,7 @@ pub fn build(b: *std.Build) !void {
     const boringssl = b.dependency("boringssl", .{
         .target = target,
         .optimize = optimize,
+        .force_pic = force_pic == true,
     });
     const ssl = boringssl.artifact("ssl");
     const crypto = boringssl.artifact("crypto");
@@ -47,7 +58,9 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    lsquic.linkLibrary(zlib_dep.artifact("z"));
+    const zlib_artifact = zlib_dep.artifact("z");
+    zlib_artifact.root_module.pic = if (force_pic == true) true else null;
+    lsquic.linkLibrary(zlib_artifact);
 
     lsquic.addCSourceFiles(.{
         .root = b.path("src/liblsquic"),
@@ -141,44 +154,6 @@ pub fn build(b: *std.Build) !void {
     });
     lsquic.addCSourceFile(.{ .file = b.path("src/lshpack/lshpack.c") });
 
-    // demos
-
-    const sol_client = b.addExecutable(.{
-        .name = "sol_client",
-        .target = target,
-        .optimize = optimize,
-    });
-    b.installArtifact(sol_client);
-    sol_client.linkLibrary(lsquic);
-
-    // quick hack to include libevent from homebrew
-    if (b.graph.host.result.os.tag == .macos) {
-        sol_client.addLibraryPath(b.path("generated/event2"));
-        sol_client.addIncludePath(b.path("generated"));
-    }
-    sol_client.linkSystemLibrary("event");
-    sol_client.addIncludePath(b.path("include"));
-    sol_client.addIncludePath(b.path("bin"));
-    sol_client.addIncludePath(boringssl.path("vendor/include"));
-
-    const test_config = b.addConfigHeader(.{
-        .style = .{ .cmake = b.path("bin/test_config.h.in") },
-    }, .{
-        .HAVE_SENDMMSG = 0,
-    });
-    sol_client.addConfigHeader(test_config);
-
-    sol_client.addCSourceFiles(.{
-        .root = b.path("bin"),
-        .files = &.{"sol_client.c"},
-        // we need to specify the stack-protector here since doing
-        // sol_client.root_module.stack_protector = true passes in a different
-        // flag to clang, which seemingly miscompiles on clang 18, causing some
-        // very subtle UB which itself causes handshakes to fail.
-        .flags = &.{"-fstack-protector"},
-    });
-
-    // TODO: fix all of the UB in the library
-    lsquic.root_module.sanitize_c = false;
-    sol_client.root_module.sanitize_c = false;
+    // For a demo, see:
+    // https://github.com/Syndica/sig/blob/11116178d7c284e9f98a249d80a9baa9b20313ed/src/net/quic_client.zig
 }

@@ -34,8 +34,6 @@ add_executable(duck_server duck_server.c prog.c test_common.c test_cert.c)
 add_executable(duck_client duck_client.c prog.c test_common.c test_cert.c)
 add_executable(perf_client perf_client.c prog.c test_common.c test_cert.c)
 add_executable(perf_server perf_server.c prog.c test_common.c test_cert.c)
-add_executable(sol_client sol_client.c prog.c test_common.c test_cert.c)
-
 
 IF (NOT MSVC)
 

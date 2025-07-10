@@ -21,7 +21,7 @@
 #include "../src/liblsquic/lsquic_logger.h"
 
 #include <openssl/ssl.h>
-#include <openssl/curve25519.h>
+#include <openssl/curve2551.h>
 #include <openssl/x509.h>
 #include <openssl/bio.h>
 
