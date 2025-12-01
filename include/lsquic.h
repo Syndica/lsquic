@@ -1558,6 +1558,9 @@ lsquic_conn_n_avail_streams (const lsquic_conn_t *);
 void
 lsquic_conn_make_stream (lsquic_conn_t *);
 
+void
+lsquic_conn_make_uni_stream (struct lsquic_conn *lconn, int priority, const struct lsquic_stream_if *stream_if, void *stream_if_ctx);
+
 /** Return number of delayed streams currently pending */
 unsigned
 lsquic_conn_n_pending_streams (const lsquic_conn_t *);

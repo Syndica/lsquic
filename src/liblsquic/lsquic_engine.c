@@ -693,8 +693,8 @@ lsquic_engine_new (unsigned flags,
     engine->pub.enp_verify_cert  = api->ea_verify_cert;
     engine->pub.enp_verify_ctx   = api->ea_verify_ctx;
     engine->pub.enp_engine = engine;
-    if (hash_conns_by_addr(engine))
-        engine->flags |= ENG_CONNS_BY_ADDR;
+    // if (hash_conns_by_addr(engine))
+    //     engine->flags |= ENG_CONNS_BY_ADDR;
     engine->conns_hash = lsquic_hash_create();
     RAND_bytes((uint8_t *)&seed, 8);
     lsquic_hash_set_seed(engine->conns_hash, seed);
