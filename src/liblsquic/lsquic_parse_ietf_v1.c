@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <errno.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/queue.h>
 #ifndef WIN32
@@ -984,6 +985,7 @@ ietf_v1_gen_ack_frame (unsigned char *outbuf, size_t outbuf_sz,
         void *rechist, lsquic_time_t now, int *has_missing,
         lsquic_packno_t *largest_received, const uint64_t *ecn_counts)
 {
+    static unsigned ack_dbg_events;
     unsigned char *block_count_p, *p = outbuf;
     unsigned char *const end = p + outbuf_sz;
     lsquic_time_t time_diff;
@@ -1009,13 +1011,27 @@ ietf_v1_gen_ack_frame (unsigned char *outbuf, size_t outbuf_sz,
         errno = EINVAL;
         return -1;
     }
-    // LSQ_DEBUG("range [%"PRIu64" - %"PRIu64"]", range->high, range->low);
+    fprintf(stderr, "ACKDBG gen_ack: first range [%"PRIu64" - %"PRIu64"] outbuf_sz=%zu\n",
+            range->high, range->low, outbuf_sz);
 
-    time_diff = now - rechist_largest_recv(rechist);
+    {
+        lsquic_time_t largest_recv = rechist_largest_recv(rechist);
+        fprintf(stderr, "ACKDBG gen_ack: now=%"PRIu64" largest_recv=%"PRIu64"\n",
+                (uint64_t)now, (uint64_t)largest_recv);
+        if (now < largest_recv) {
+            fprintf(stderr, "ACKDBG gen_ack: WARNING now < largest_recv, would underflow!\n");
+        }
+        time_diff = now - largest_recv;
+    }
     time_diff >>= TP_DEF_ACK_DELAY_EXP;
 
     maxno = range->high;
     packno_diff = maxno - range->low;
+    fprintf(stderr, "ACKDBG gen_ack: maxno=%"PRIu64" range_low=%"PRIu64" packno_diff=%"PRIu64" time_diff=%"PRIu64"\n",
+            maxno, range->low, packno_diff, time_diff);
+    if (maxno < range->low) {
+        fprintf(stderr, "ACKDBG gen_ack: ERROR maxno < range->low, packno_diff underflowed!\n");
+    }
 
     a = vint_val2bits(maxno);
     b = vint_val2bits(time_diff);
@@ -1054,13 +1070,37 @@ ietf_v1_gen_ack_frame (unsigned char *outbuf, size_t outbuf_sz,
     addl_ack_blocks = 0;
     while ((range = rechist_next(rechist)))
     {
-        // LSQ_DEBUG("range [%"PRIu64" - %"PRIu64"]", range->high, range->low);
+        fprintf(stderr, "ACKDBG gen_ack: next range [%"PRIu64" - %"PRIu64"] prev_low=%"PRIu64"\n",
+                range->high, range->low, prev_low);
+        if (prev_low <= range->high) {
+            fprintf(stderr, "ACKDBG gen_ack: ERROR prev_low(%"PRIu64") <= range->high(%"PRIu64"), gap would underflow!\n",
+                    prev_low, range->high);
+        }
         gap = prev_low - range->high - 1;
         rsize = range->high - range->low;
+        if (range->high < range->low) {
+            fprintf(stderr, "ACKDBG gen_ack: ERROR range->high(%"PRIu64") < range->low(%"PRIu64"), rsize would underflow!\n",
+                    range->high, range->low);
+        }
+        if (gap == 0) {
+            fprintf(stderr, "ACKDBG gen_ack: ERROR gap==0, gap-1 would underflow!\n");
+        }
+        fprintf(stderr, "ACKDBG gen_ack: gap=%"PRIu64" rsize=%"PRIu64"\n", gap, rsize);
         a = vint_val2bits(gap - 1);
         b = vint_val2bits(rsize);
-        if (ecn_needs + (1 << a) + (1 << b) > (unsigned)AVAIL())
+        if (ecn_needs + (1 << a) + (1 << b)
+                + (addl_ack_blocks == VINT_MAX_ONE_BYTE) > (unsigned)AVAIL())
+        {
+            if (ack_dbg_events < 200)
+            {
+                fprintf(stderr,
+                    "ACKDBG break: avail=%u ecn_needs=%u gap_bits=%u rsize_bits=%u addl=%u grow=%u\n",
+                    (unsigned) AVAIL(), ecn_needs, a, b, addl_ack_blocks,
+                    addl_ack_blocks == VINT_MAX_ONE_BYTE);
+                ++ack_dbg_events;
+            }
             break;
+        }
         if (addl_ack_blocks == VINT_MAX_ONE_BYTE)
         {
             memmove(block_count_p + 2, block_count_p + 1,
@@ -1084,12 +1124,23 @@ ietf_v1_gen_ack_frame (unsigned char *outbuf, size_t outbuf_sz,
 
     if (ecn_counts)
     {
-        assert(ecn_needs <= (unsigned)AVAIL());
-        for (ecn = 1; ecn <= 3; ++ecn)
+        if (ecn_needs > (unsigned)AVAIL())
         {
-            vint_write(p, ecn_counts[ecnmap[ecn]], bits[ecnmap[ecn]], 1 << bits[ecnmap[ecn]]);
-            p += 1 << bits[ecnmap[ecn]];
+            if (ack_dbg_events < 200)
+            {
+                fprintf(stderr,
+                    "ACKDBG downgrade: avail=%u ecn_needs=%u addl=%u\n",
+                    (unsigned) AVAIL(), ecn_needs, addl_ack_blocks);
+                ++ack_dbg_events;
+            }
+            outbuf[0] = 0x02;
         }
+        else
+            for (ecn = 1; ecn <= 3; ++ecn)
+            {
+                vint_write(p, ecn_counts[ecnmap[ecn]], bits[ecnmap[ecn]], 1 << bits[ecnmap[ecn]]);
+                p += 1 << bits[ecnmap[ecn]];
+            }
     }
 
     *has_missing = addl_ack_blocks > 0;

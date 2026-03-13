@@ -94,4 +94,25 @@ lsquic_rechist_copy_ranges (struct lsquic_rechist *, void *rechist_ctx,
     const struct lsquic_packno_range * (*first) (void *),
     const struct lsquic_packno_range * (*next) (void *));
 
+/* Wrappers that match the gaf_rechist callback signatures (void * parameter)
+ * to avoid UBSan -fsanitize=function traps from type-mismatched casts.
+ */
+static inline const struct lsquic_packno_range *
+rechist_first_wrapper (void *rechist)
+{
+    return lsquic_rechist_first ((lsquic_rechist_t *) rechist);
+}
+
+static inline const struct lsquic_packno_range *
+rechist_next_wrapper (void *rechist)
+{
+    return lsquic_rechist_next ((lsquic_rechist_t *) rechist);
+}
+
+static inline lsquic_time_t
+rechist_largest_recv_wrapper (void *rechist)
+{
+    return lsquic_rechist_largest_recv ((const lsquic_rechist_t *) rechist);
+}
+
 #endif

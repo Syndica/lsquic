@@ -1295,9 +1295,9 @@ full_conn_ci_write_ack (struct lsquic_conn *lconn,
     w = conn->fc_conn.cn_pf->pf_gen_ack_frame(
             packet_out->po_data + packet_out->po_data_sz,
             lsquic_packet_out_avail(packet_out),
-            (gaf_rechist_first_f)        lsquic_rechist_first,
-            (gaf_rechist_next_f)         lsquic_rechist_next,
-            (gaf_rechist_largest_recv_f) lsquic_rechist_largest_recv,
+            rechist_first_wrapper,
+            rechist_next_wrapper,
+            rechist_largest_recv_wrapper,
             &conn->fc_rechist, now, &has_missing, &packet_out->po_ack2ed,
             NULL);
     if (w < 0) {
