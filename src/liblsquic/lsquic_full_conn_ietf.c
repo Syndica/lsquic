@@ -1902,9 +1902,9 @@ generate_ack_frame_for_pns (struct ietf_full_conn *conn,
     w = conn->ifc_conn.cn_pf->pf_gen_ack_frame(
             packet_out->po_data + packet_out->po_data_sz,
             lsquic_packet_out_avail(packet_out),
-            (gaf_rechist_first_f)        lsquic_rechist_first,
-            (gaf_rechist_next_f)         lsquic_rechist_next,
-            (gaf_rechist_largest_recv_f) lsquic_rechist_largest_recv,
+            rechist_first_wrapper,
+            rechist_next_wrapper,
+            rechist_largest_recv_wrapper,
             &conn->ifc_rechist[pns], now, &has_missing, &packet_out->po_ack2ed,
             ecn_counts);
     if (w < 0) {
