@@ -5,12 +5,12 @@
     .fingerprint = 0x91bb79d30d8691a1,
     .dependencies = .{
         .boringssl = .{
-            .url = "git+https://github.com/Syndica/boringssl-zig#01b27c04e42cbb50173348bf2f225b2e223ef87a",
-            .hash = "boringssl-0.1.0-VtJeWehMAAA4RNnwRnzEvKcS9rjsR1QVRw1uJrwXxmVK",
+            .url = "git+https://github.com/dnut/boringssl-zig#8c3441adb74b34116c47faa5a1b85d3aee46a979",
+            .hash = "boringssl-0.1.0-VtJeWeJNAACQmdblpVmZFFk8D7V8yIYpnSOkEN2lgf83",
         },
         .zlib = .{
-            .url = "git+https://github.com/allyourcodebase/zlib#61e7df7e996ec5a5f13a653db3c419adb340d6ef",
-            .hash = "zlib-1.3.1-ZZQ7lbYMAAB1hTSOKSXAKAgHsfDcyWNH_37ojw5WSpgR",
+            .url = "git+https://github.com/allyourcodebase/zlib#d3b5519d3b73616a6bfece0712f080029d2a9244",
+            .hash = "zlib-1.3.2-ZZQ7lc8NAAAHm9MDfplvwoesXvk4tVm6VCsiI8KnIbT0",
         },
     },
     .paths = .{""},

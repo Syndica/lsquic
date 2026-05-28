@@ -17,9 +17,9 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
             // TODO: remove this when passing optionals through `b.option` is possible.
             .pic = if (force_pic == true) true else null,
+            .link_libc = true,
         }),
     });
-    lsquic.linkLibC();
     b.installArtifact(lsquic);
 
     const translate_c = b.addTranslateC(.{
@@ -46,14 +46,14 @@ pub fn build(b: *std.Build) !void {
     ssl.bundle_ubsan_rt = true;
     crypto.bundle_ubsan_rt = true;
 
-    lsquic.addIncludePath(b.path("include"));
-    lsquic.addIncludePath(b.path("src/lshpack"));
-    lsquic.addIncludePath(b.path("src/liblsquic"));
-    lsquic.addIncludePath(b.path("src/liblsquic/ls-qpack/"));
-    lsquic.addIncludePath(b.path("src/lshpack/deps/xxhash"));
-    lsquic.addIncludePath(boringssl.path("vendor/include"));
-    lsquic.linkLibrary(ssl);
-    lsquic.linkLibrary(crypto);
+    lsquic.root_module.addIncludePath(b.path("include"));
+    lsquic.root_module.addIncludePath(b.path("src/lshpack"));
+    lsquic.root_module.addIncludePath(b.path("src/liblsquic"));
+    lsquic.root_module.addIncludePath(b.path("src/liblsquic/ls-qpack/"));
+    lsquic.root_module.addIncludePath(b.path("src/lshpack/deps/xxhash"));
+    lsquic.root_module.addIncludePath(boringssl.path("vendor/include"));
+    lsquic.root_module.linkLibrary(ssl);
+    lsquic.root_module.linkLibrary(crypto);
 
     const zlib_dep = b.dependency("zlib", .{
         .target = target,
@@ -61,9 +61,9 @@ pub fn build(b: *std.Build) !void {
     });
     const zlib_artifact = zlib_dep.artifact("z");
     zlib_artifact.root_module.pic = if (force_pic == true) true else null;
-    lsquic.linkLibrary(zlib_artifact);
+    lsquic.root_module.linkLibrary(zlib_artifact);
 
-    lsquic.addCSourceFiles(.{
+    lsquic.root_module.addCSourceFiles(.{
         .root = b.path("src/liblsquic"),
         .files = &.{
             "ls-qpack/lsqpack.c",
@@ -156,7 +156,7 @@ pub fn build(b: *std.Build) !void {
             "-DHAVE_BORINGSSL",
         },
     });
-    lsquic.addCSourceFile(.{ .file = b.path("src/lshpack/lshpack.c") });
+    lsquic.root_module.addCSourceFile(.{ .file = b.path("src/lshpack/lshpack.c") });
 
     // For a demo, see:
     // https://github.com/Syndica/sig/blob/11116178d7c284e9f98a249d80a9baa9b20313ed/src/net/quic_client.zig
